@@ -483,7 +483,7 @@ solana-program-test = { path = "program-test", version = "=2.2.15" }
 solana-pubkey = { version = "2.2.1", default-features = false }
 solana-pubsub-client = { path = "pubsub-client", version = "=2.2.15" }
 solana-quic-client = { path = "quic-client", version = "=2.2.15" }
-solana-quic-definitions = "2.2.1"
+solana-quic-definitions = "2.3.0"
 solana-rayon-threadlimit = { path = "rayon-threadlimit", version = "=2.2.15" }
 solana-remote-wallet = { path = "remote-wallet", version = "=2.2.15", default-features = false }
 solana-rent = "2.2.1"
