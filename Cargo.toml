@@ -412,7 +412,7 @@ solana-derivation-path = "2.2.1"
 solana-download-utils = { path = "download-utils", version = "=2.2.15" }
 solana-ed25519-program = "2.2.2"
 solana-entry = { path = "entry", version = "=2.2.15" }
-solana-program-entrypoint = "2.2.1"
+solana-program-entrypoint = "2.3.0"
 solana-epoch-info = "2.2.1"
 solana-epoch-rewards = "2.2.1"
 solana-epoch-rewards-hasher = "2.2.1"
