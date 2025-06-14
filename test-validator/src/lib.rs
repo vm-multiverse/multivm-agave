@@ -612,6 +612,28 @@ impl TestValidatorGenesis {
         self.start_with_mint_address_and_geyser_plugin_rpc(mint_address, socket_addr_space, None)
     }
 
+    pub fn start_with_mint_address_and_geyser_plugin_rpc_and_manual_tick(
+        &self,
+        mint_address: Pubkey,
+        socket_addr_space: SocketAddrSpace,
+        rpc_to_plugin_manager_receiver: Option<Receiver<GeyserPluginManagerRequest>>,
+    ) -> Result<TestValidator, Box<dyn std::error::Error>> {
+        TestValidator::start_with_manual_tick(
+            mint_address,
+            self,
+            socket_addr_space,
+            rpc_to_plugin_manager_receiver,
+        )
+        .inspect(|test_validator| {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_io()
+                .enable_time()
+                .build()
+                .unwrap();
+            runtime.block_on(test_validator.wait_for_nonzero_fees());
+        })
+    }
+
     /// Start a test validator with the address of the mint account that will receive tokens
     /// created at genesis. Augments admin rpc service with dynamic geyser plugin manager if
     /// the geyser plugin service is enabled at startup.
@@ -927,6 +949,149 @@ impl TestValidator {
         )?;
 
         Ok(ledger_path)
+    }
+
+    /// Starts a TestValidator at the provided ledger directory
+    fn start_with_manual_tick(
+        mint_address: Pubkey,
+        config: &TestValidatorGenesis,
+        socket_addr_space: SocketAddrSpace,
+        rpc_to_plugin_manager_receiver: Option<Receiver<GeyserPluginManagerRequest>>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let preserve_ledger = config.ledger_path.is_some();
+        let ledger_path = TestValidator::initialize_ledger(mint_address, config)?;
+
+        let validator_identity =
+            read_keypair_file(ledger_path.join("validator-keypair.json").to_str().unwrap())?;
+        let validator_vote_account = read_keypair_file(
+            ledger_path
+                .join("vote-account-keypair.json")
+                .to_str()
+                .unwrap(),
+        )?;
+
+        let mut node = Node::new_single_bind(
+            &validator_identity.pubkey(),
+            &config.node_config.gossip_addr,
+            config.node_config.port_range,
+            config.node_config.bind_ip_addr,
+        );
+        if let Some((rpc, rpc_pubsub)) = config.rpc_ports {
+            let addr = node.info.gossip().unwrap().ip();
+            node.info.set_rpc((addr, rpc)).unwrap();
+            node.info.set_rpc_pubsub((addr, rpc_pubsub)).unwrap();
+        }
+
+        let vote_account_address = validator_vote_account.pubkey();
+        let rpc_url = format!("http://{}", node.info.rpc().unwrap());
+        let rpc_pubsub_url = format!("ws://{}/", node.info.rpc_pubsub().unwrap());
+        let tpu = node.info.tpu(Protocol::UDP).unwrap();
+        let gossip = node.info.gossip().unwrap();
+
+        {
+            let mut authorized_voter_keypairs = config.authorized_voter_keypairs.write().unwrap();
+            if !authorized_voter_keypairs
+                .iter()
+                .any(|x| x.pubkey() == vote_account_address)
+            {
+                authorized_voter_keypairs.push(Arc::new(validator_vote_account))
+            }
+        }
+
+        let accounts_db_config = Some(AccountsDbConfig {
+            index: Some(AccountsIndexConfig {
+                started_from_validator: true,
+                ..AccountsIndexConfig::default()
+            }),
+            account_indexes: Some(config.rpc_config.account_indexes.clone()),
+            ..AccountsDbConfig::default()
+        });
+
+        let runtime_config = RuntimeConfig {
+            compute_budget: config
+                .compute_unit_limit
+                .map(|compute_unit_limit| ComputeBudget {
+                    compute_unit_limit,
+                    ..ComputeBudget::default()
+                }),
+            log_messages_bytes_limit: config.log_messages_bytes_limit,
+            transaction_account_lock_limit: config.transaction_account_lock_limit,
+        };
+
+        let mut validator_config = ValidatorConfig {
+            on_start_geyser_plugin_config_files: config.geyser_plugin_config_files.clone(),
+            rpc_addrs: Some((
+                SocketAddr::new(
+                    IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+                    node.info.rpc().unwrap().port(),
+                ),
+                SocketAddr::new(
+                    IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+                    node.info.rpc_pubsub().unwrap().port(),
+                ),
+            )),
+            rpc_config: config.rpc_config.clone(),
+            pubsub_config: config.pubsub_config.clone(),
+            accounts_hash_interval_slots: 100,
+            account_paths: vec![
+                create_accounts_run_and_snapshot_dirs(ledger_path.join("accounts"))
+                    .unwrap()
+                    .0,
+            ],
+            run_verification: false, // Skip PoH verification of ledger on startup for speed
+            snapshot_config: SnapshotConfig {
+                full_snapshot_archive_interval_slots: 100,
+                incremental_snapshot_archive_interval_slots: Slot::MAX,
+                bank_snapshots_dir: ledger_path.join("snapshot"),
+                full_snapshot_archives_dir: ledger_path.to_path_buf(),
+                incremental_snapshot_archives_dir: ledger_path.to_path_buf(),
+                ..SnapshotConfig::default()
+            },
+            warp_slot: config.warp_slot,
+            validator_exit: config.validator_exit.clone(),
+            max_ledger_shreds: config.max_ledger_shreds,
+            no_wait_for_vote_to_start_leader: true,
+            staked_nodes_overrides: config.staked_nodes_overrides.clone(),
+            accounts_db_config,
+            runtime_config,
+            ..ValidatorConfig::default_for_test()
+        };
+        if let Some(ref tower_storage) = config.tower_storage {
+            validator_config.tower_storage = tower_storage.clone();
+        }
+
+        let validator = Some(Validator::new_with_manual_tick(
+            node,
+            Arc::new(validator_identity),
+            &ledger_path,
+            &vote_account_address,
+            config.authorized_voter_keypairs.clone(),
+            vec![],
+            &validator_config,
+            true, // should_check_duplicate_instance
+            rpc_to_plugin_manager_receiver,
+            config.start_progress.clone(),
+            socket_addr_space,
+            ValidatorTpuConfig::new_for_tests(config.tpu_enable_udp),
+            config.admin_rpc_service_post_init.clone(),
+        )?);
+
+        // Needed to avoid panics in `solana-responder-gossip` in tests that create a number of
+        // test validators concurrently...
+        discover_cluster(&gossip, 1, socket_addr_space)
+            .map_err(|err| format!("TestValidator startup failed: {err:?}"))?;
+
+        let test_validator = TestValidator {
+            ledger_path,
+            preserve_ledger,
+            rpc_pubsub_url,
+            rpc_url,
+            tpu,
+            gossip,
+            validator,
+            vote_account_address,
+        };
+        Ok(test_validator)
     }
 
     /// Starts a TestValidator at the provided ledger directory

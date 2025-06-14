@@ -94,6 +94,42 @@ impl PohTiming {
 }
 
 impl PohService {
+    pub fn new_with_manual_tick(
+        poh_recorder: Arc<RwLock<PohRecorder>>,
+        poh_config: &PohConfig,
+        poh_exit: Arc<AtomicBool>,
+        _ticks_per_slot: u64,
+        _pinned_cpu_core: usize,
+        _hashes_per_batch: u64,
+        record_receiver: Receiver<Record>,
+        tick_receiver: Receiver<()>,
+    ) -> Self {
+        let poh_config = poh_config.clone();
+        let tick_producer = Builder::new()
+            .name("solPohTickProd".to_string())
+            .spawn(move || {
+                if poh_config.hashes_per_tick.is_none() {
+                    if poh_config.target_tick_count.is_none() {
+                        Self::manual_tick_producer(
+                            poh_recorder,
+                            &poh_config,
+                            &poh_exit,
+                            record_receiver,
+                            tick_receiver,
+                        );
+                    } else {
+                        todo!("manual tick producer with target tick count");
+                    }
+                } else {
+                    todo!("tick producer with hashes per tick");
+                }
+                poh_exit.store(true, Ordering::Relaxed);
+            })
+            .unwrap();
+
+        Self { tick_producer }
+    }
+
     pub fn new(
         poh_recorder: Arc<RwLock<PohRecorder>>,
         poh_config: &PohConfig,
@@ -158,6 +194,32 @@ impl PohService {
             0
         };
         target_tick_duration_ns.saturating_sub(adjustment_per_tick)
+    }
+
+    fn manual_tick_producer(
+        poh_recorder: Arc<RwLock<PohRecorder>>,
+        poh_config: &PohConfig,
+        poh_exit: &AtomicBool,
+        record_receiver: Receiver<Record>,
+        tick_receiver: Receiver<()>,
+    ) {
+        let mut last_tick = Instant::now();
+        while !poh_exit.load(Ordering::Relaxed) {
+            // receive a tick signal
+            let _tick_signal = tick_receiver.recv();
+
+            let remaining_tick_time = poh_config
+                .target_tick_duration
+                .saturating_sub(last_tick.elapsed());
+            Self::read_record_receiver_and_process(
+                &poh_recorder,
+                &record_receiver,
+                remaining_tick_time,
+            );
+
+            last_tick = Instant::now();
+            poh_recorder.write().unwrap().tick();
+        }
     }
 
     fn low_power_tick_producer(
