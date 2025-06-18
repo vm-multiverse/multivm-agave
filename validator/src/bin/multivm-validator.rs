@@ -23,6 +23,7 @@ use {
       account::AccountSharedData,
       clock::Slot,
       epoch_schedule::EpochSchedule,
+      fee_calculator::FeeRateGovernor,
       native_token::sol_to_lamports,
       pubkey::Pubkey,
       rent::Rent,
@@ -539,7 +540,7 @@ fn main() {
           /* enable_warmup_epochs = */ false,
       ));
 
-      genesis.rent = Rent::with_slots_per_epoch(slots_per_epoch);
+    //   genesis.rent = Rent::with_slots_per_epoch(slots_per_epoch);
   }
 
   if let Some(gossip_host) = gossip_host {
@@ -570,6 +571,10 @@ fn main() {
   if let Some(compute_unit_limit) = compute_unit_limit {
       genesis.compute_unit_limit(compute_unit_limit);
   }
+
+  // free
+  genesis.fee_rate_governor(FeeRateGovernor::new(0, 0));
+  genesis.rent(Rent::free());
 
   match genesis.start_with_mint_address_and_geyser_plugin_rpc_and_manual_tick(
       mint_address,
