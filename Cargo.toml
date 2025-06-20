@@ -457,7 +457,7 @@ solana-merkle-tree = { path = "merkle-tree", version = "=2.2.15" }
 solana-message = "2.2.1"
 solana-metrics = { path = "metrics", version = "=2.2.15" }
 solana-msg = "2.2.1"
-solana-native-token = "2.2.1"
+solana-native-token = "2.3.0"
 solana-net-utils = { path = "net-utils", version = "=2.2.15" }
 solana-nohash-hasher = "0.2.1"
 solana-nonce = "2.2.1"
