@@ -35,7 +35,7 @@ solana-clap-utils = { workspace = true }
 solana-client = { workspace = true }
 solana-connection-cache = { workspace = true }
 solana-entry = { workspace = true }
-solana-frozen-abi = { version = "=2.2.1", optional = true, features = [
+solana-frozen-abi = { version = "=2.3.0", optional = true, features = [
     "frozen-abi",
 ] }
 solana-frozen-abi-macro = { version = "=2.2.1", optional = true, features = [
