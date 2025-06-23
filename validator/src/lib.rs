@@ -21,6 +21,7 @@ pub mod bootstrap;
 pub mod cli;
 pub mod commands;
 pub mod dashboard;
+pub mod bridge;
 
 #[cfg(unix)]
 fn redirect_stderr(filename: &str) {

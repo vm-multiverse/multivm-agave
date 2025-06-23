@@ -431,6 +431,7 @@ dependencies = [
  "solana-streamer",
  "solana-test-validator",
  "solana-tpu-client",
+ "solana-transaction-error",
  "solana-unified-scheduler-pool",
  "solana-version",
  "solana-vote-program",

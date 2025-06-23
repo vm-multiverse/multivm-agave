@@ -67,6 +67,7 @@ solana-vote-program = { workspace = true }
 solana-quic-client = { workspace = true }
 solana-connection-cache = { workspace = true }
 solana-client = { workspace = true }
+solana-transaction-error = { workspace = true }
 symlink = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
