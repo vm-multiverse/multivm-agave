@@ -5048,7 +5048,7 @@ dependencies = [
  "quinn-proto",
  "quinn-udp",
  "rustc-hash 2.0.0",
- "rustls 0.23.27",
+ "rustls 0.23.28",
  "socket2",
  "thiserror 2.0.12",
  "tokio",
@@ -5069,7 +5069,7 @@ dependencies = [
  "rand 0.9.0",
  "ring",
  "rustc-hash 2.0.0",
- "rustls 0.23.27",
+ "rustls 0.23.28",
  "rustls-pki-types",
  "rustls-platform-verifier",
  "slab",
@@ -5590,9 +5590,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.27"
+version = "0.23.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "730944ca083c1c233a75c09f199e973ca499344a2b7ba9e755c457e86fb4a321"
+checksum = "7160e3e10bf4535308537f3c4e1641468cd0e485175d6163087c0393c7d46643"
 dependencies = [
  "once_cell",
  "ring",
@@ -5643,7 +5643,7 @@ dependencies = [
  "jni",
  "log",
  "once_cell",
- "rustls 0.23.27",
+ "rustls 0.23.28",
  "rustls-native-certs",
  "rustls-platform-verifier-android",
  "rustls-webpki 0.103.2",
@@ -7388,7 +7388,7 @@ dependencies = [
  "rand_chacha 0.3.1",
  "rayon",
  "rolling-file",
- "rustls 0.23.27",
+ "rustls 0.23.28",
  "serde",
  "serde_bytes",
  "serde_derive",
@@ -9090,7 +9090,7 @@ dependencies = [
  "log",
  "quinn",
  "quinn-proto",
- "rustls 0.23.27",
+ "rustls 0.23.28",
  "solana-connection-cache",
  "solana-keypair",
  "solana-logger",
@@ -10075,7 +10075,7 @@ dependencies = [
  "quinn",
  "quinn-proto",
  "rand 0.8.5",
- "rustls 0.23.27",
+ "rustls 0.23.28",
  "smallvec",
  "socket2",
  "solana-keypair",
@@ -10401,7 +10401,7 @@ dependencies = [
 name = "solana-tls-utils"
 version = "2.2.15"
 dependencies = [
- "rustls 0.23.27",
+ "rustls 0.23.28",
  "solana-keypair",
  "solana-pubkey",
  "solana-signer",
@@ -10517,7 +10517,7 @@ dependencies = [
  "log",
  "lru",
  "quinn",
- "rustls 0.23.27",
+ "rustls 0.23.28",
  "solana-cli-config",
  "solana-clock",
  "solana-commitment-config",
@@ -10745,7 +10745,7 @@ dependencies = [
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "rayon",
- "rustls 0.23.27",
+ "rustls 0.23.28",
  "solana-entry",
  "solana-geyser-plugin-manager",
  "solana-gossip",
@@ -10897,7 +10897,7 @@ dependencies = [
  "quinn",
  "quinn-proto",
  "rand 0.8.5",
- "rustls 0.23.27",
+ "rustls 0.23.28",
  "smallvec",
  "socket2",
  "solana-clap-utils",
