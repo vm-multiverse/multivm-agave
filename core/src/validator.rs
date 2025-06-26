@@ -608,6 +608,9 @@ impl Validator {
         tpu_config: ValidatorTpuConfig,
         admin_rpc_service_post_init: Arc<RwLock<Option<AdminRpcRequestMetadataPostInit>>>,
     ) -> Result<Self> {
+
+        println!("validator new_with_manual_tick");
+
         let ValidatorTpuConfig {
             use_quic,
             vote_use_quic,
@@ -968,6 +971,9 @@ impl Validator {
                 exit.clone(),
             )
         };
+        ////
+        ////
+        ////
         let poh_recorder = Arc::new(RwLock::new(poh_recorder));
 
         let (banking_tracer, tracer_thread) =
@@ -1325,6 +1331,9 @@ impl Validator {
         let wait_for_vote_to_start_leader =
             !waited_for_supermajority && !config.no_wait_for_vote_to_start_leader;
 
+        ////
+        ////
+        ////
         // Tick manually now
         let (tick_sender, tick_receiver) = unbounded();
         std::thread::spawn({

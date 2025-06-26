@@ -94,6 +94,9 @@ impl PohTiming {
 }
 
 impl PohService {
+    ////
+    ////
+    //// new_with_manual_tick -> manual_tick_producer
     pub fn new_with_manual_tick(
         poh_recorder: Arc<RwLock<PohRecorder>>,
         poh_config: &PohConfig,
@@ -104,6 +107,9 @@ impl PohService {
         record_receiver: Receiver<Record>,
         tick_receiver: Receiver<()>,
     ) -> Self {
+
+        println!("poh_service new_with_manual_tick");
+
         let poh_config = poh_config.clone();
         let tick_producer = Builder::new()
             .name("solPohTickProd".to_string())
@@ -114,7 +120,7 @@ impl PohService {
                             poh_recorder,
                             &poh_config,
                             &poh_exit,
-                            record_receiver,
+                            record_receiver, //txs
                             tick_receiver,
                         );
                     } else {
@@ -185,6 +191,9 @@ impl PohService {
         Self { tick_producer }
     }
 
+    ////
+    ////
+    ////
     pub fn target_ns_per_tick(ticks_per_slot: u64, target_tick_duration_ns: u64) -> u64 {
         // Account for some extra time outside of PoH generation to account
         // for processing time outside PoH.
@@ -196,6 +205,10 @@ impl PohService {
         target_tick_duration_ns.saturating_sub(adjustment_per_tick)
     }
 
+    ////
+    ////
+    ////
+    //// manual_tick_producer -> read_record_receiver_and_process
     fn manual_tick_producer(
         poh_recorder: Arc<RwLock<PohRecorder>>,
         poh_config: &PohConfig,
@@ -203,6 +216,8 @@ impl PohService {
         record_receiver: Receiver<Record>,
         tick_receiver: Receiver<()>,
     ) {
+        println!("poh_service manual_tick_producer");
+
         let mut last_tick = Instant::now();
         while !poh_exit.load(Ordering::Relaxed) {
             // receive a tick signal
@@ -213,9 +228,11 @@ impl PohService {
                 .saturating_sub(last_tick.elapsed());
             Self::read_record_receiver_and_process(
                 &poh_recorder,
-                &record_receiver,
+                &record_receiver, // txs
                 remaining_tick_time,
             );
+
+            print!("poh manual_tick_producer");
 
             last_tick = Instant::now();
             poh_recorder.write().unwrap().tick();
@@ -245,6 +262,9 @@ impl PohService {
         }
     }
 
+    ////
+    ////
+    //// read_record_receiver_and_process -> record
     pub fn read_record_receiver_and_process(
         poh_recorder: &Arc<RwLock<PohRecorder>>,
         record_receiver: &Receiver<Record>,

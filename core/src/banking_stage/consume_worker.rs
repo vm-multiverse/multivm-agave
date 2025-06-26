@@ -107,11 +107,15 @@ impl<Tx: TransactionWithMeta> ConsumeWorker<Tx> {
     }
 
     /// Consume a single batch.
-    fn consume(
+    fn consume( //////
         &self,
         bank: &Arc<Bank>,
         work: ConsumeWork<Tx>,
     ) -> Result<(), ConsumeWorkerError<Tx>> {
+        ////
+        ////
+        ////
+        ////
         let output = self.consumer.process_and_record_aged_transactions(
             bank,
             &work.transactions,

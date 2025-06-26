@@ -560,6 +560,9 @@ impl BankingStage {
         Self { bank_thread_hdls }
     }
 
+    ////
+    /// ////
+    /// /////
     #[allow(clippy::too_many_arguments)]
     fn spawn_scheduler_and_workers<R: ReceiveAndBuffer + Send + Sync + 'static>(
         bank_thread_hdls: &mut Vec<JoinHandle<()>>,
@@ -586,6 +589,9 @@ impl BankingStage {
         let mut worker_metrics = Vec::with_capacity(num_workers as usize);
         for (index, work_receiver) in work_receivers.into_iter().enumerate() {
             let id = (index as u32).saturating_add(NUM_VOTE_PROCESSING_THREADS);
+            ///////
+            ///////
+            ///////
             let consume_worker = ConsumeWorker::new(
                 id,
                 work_receiver,
@@ -604,7 +610,7 @@ impl BankingStage {
                 Builder::new()
                     .name(format!("solCoWorker{id:02}"))
                     .spawn(move || {
-                        let _ = consume_worker.run();
+                        let _ = consume_worker.run(); ////// /////
                     })
                     .unwrap(),
             )

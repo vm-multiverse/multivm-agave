@@ -501,7 +501,7 @@ impl Consumer {
         // WouldExceedMaxAccountCostLimit, WouldExceedMaxVoteCostLimit
         // and WouldExceedMaxAccountDataCostLimit
         let mut execute_and_commit_transactions_output =
-            self.execute_and_commit_transactions_locked(bank, &batch);
+            self.execute_and_commit_transactions_locked(bank, &batch); //////////
 
         // Once the accounts are new transactions can enter the pipeline to process them
         let (_, unlock_us) = measure_us!(drop(batch));
@@ -550,6 +550,11 @@ impl Consumer {
         }
     }
 
+
+    ////
+    ////
+    ////
+    ////
     fn execute_and_commit_transactions_locked(
         &self,
         bank: &Arc<Bank>,

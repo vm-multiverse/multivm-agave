@@ -108,7 +108,7 @@ impl Default for TestValidatorNodeConfig {
     }
 }
 
-pub struct TestValidatorGenesis {
+pub struct TestValidatorGenesis { //////
     fee_rate_governor: FeeRateGovernor,
     ledger_path: Option<PathBuf>,
     tower_storage: Option<Arc<dyn TowerStorage>>,
@@ -958,6 +958,12 @@ impl TestValidator {
         socket_addr_space: SocketAddrSpace,
         rpc_to_plugin_manager_receiver: Option<Receiver<GeyserPluginManagerRequest>>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
+
+        ////
+        ////
+        ////
+        ////
+
         let preserve_ledger = config.ledger_path.is_some();
         let ledger_path = TestValidator::initialize_ledger(mint_address, config)?;
 
@@ -1060,6 +1066,8 @@ impl TestValidator {
             validator_config.tower_storage = tower_storage.clone();
         }
 
+        ////////
+        /// new_with_manual_tick
         let validator = Some(Validator::new_with_manual_tick(
             node,
             Arc::new(validator_identity),
