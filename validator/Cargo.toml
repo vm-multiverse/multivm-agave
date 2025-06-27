@@ -89,5 +89,13 @@ jemallocator = { workspace = true }
 libc = { workspace = true }
 signal-hook = { workspace = true }
 
+[[example]]
+name = "bridge_example"
+path = "examples/bridge_example.rs"
+
+[[example]]
+name = "ipc_example"
+path = "examples/ipc_example.rs"
+
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
