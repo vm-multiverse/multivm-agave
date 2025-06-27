@@ -135,13 +135,12 @@ mod tests {
     use rand::Rng;
 
     use super::*;
-
-    const RPC_URL: &str = "http://100.68.83.77:8899";
-    const WEBSOCKET_URL: &str = "ws://100.68.83.77:8900";
+    use crate::bridge::config::MultivmConfig;
 
     #[test]
     fn test_no_fee() {
-        let bridge = Bridge::new(RPC_URL.to_string(), WEBSOCKET_URL.to_string()).unwrap();
+        let (rpc_url, websocket_url) = MultivmConfig::urls();
+        let bridge = Bridge::new(rpc_url, websocket_url).unwrap();
         let alice = tmp_keypair();
 
         // Airdrop 1000 SOL to Alice
@@ -176,9 +175,16 @@ mod tests {
 
     #[test]
     fn test_request_send() {
-        let bridge = Bridge::new(RPC_URL.to_string(), WEBSOCKET_URL.to_string()).unwrap();
+        let (rpc_url, websocket_url) = MultivmConfig::urls();
+        let bridge = Bridge::new(rpc_url, websocket_url).unwrap();
         let alice = alice();
         let bob = bob();
+
+        // Airdrop to Alice to ensure she has enough balance for the test
+        let airdrop_lamports = 1_000_000_000; // 1 SOL
+        let airdrop_signature = bridge.airdrop(&alice.pubkey(), airdrop_lamports).unwrap();
+        let airdrop_status = bridge.confirm_transaction(&airdrop_signature).unwrap();
+        assert_eq!(airdrop_status, Ok(()), "Airdrop signature: {}", airdrop_signature);
 
         // Get balances before the transaction
         let alice_balance_before = bridge.rpc_client.get_balance(&alice.pubkey()).unwrap();
@@ -199,7 +205,8 @@ mod tests {
 
     #[test]
     fn test_request_airdrop() {
-        let bridge = Bridge::new(RPC_URL.to_string(), WEBSOCKET_URL.to_string()).unwrap();
+        let (rpc_url, websocket_url) = MultivmConfig::urls();
+        let bridge = Bridge::new(rpc_url, websocket_url).unwrap();
         let alice = alice();
         let lamports = 1_000_000_000;
         let signature = bridge.airdrop(&alice.pubkey(), lamports).unwrap();

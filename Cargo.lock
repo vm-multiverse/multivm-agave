@@ -374,6 +374,7 @@ version = "2.2.15"
 dependencies = [
  "agave-geyser-plugin-interface",
  "assert_cmd",
+ "bincode",
  "chrono",
  "clap 2.33.3",
  "console",

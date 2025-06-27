@@ -51,8 +51,7 @@ fn tmp_keypair() {
 }
 
 fn rpc_client() -> Arc<RpcClient> {
-    let rpc_url = "http://100.68.83.77:8899";
-    let websocket_url = "ws://100.68.83.77:8900";
+    let (rpc_url, _websocket_url) = agave_validator::bridge::config::MultivmConfig::urls();
     let rpc_client = Arc::new(RpcClient::new_with_commitment(
         rpc_url.to_string(),
         CommitmentConfig::processed(),
@@ -64,10 +63,9 @@ fn tpu_client() -> (
     Arc<TpuClient<QuicPool, QuicConnectionManager, QuicConfig>>,
     Arc<RpcClient>,
 ) {
-    let rpc_url = "http://100.68.83.77:8899";
-    let websocket_url = "ws://100.68.83.77:8900";
+    let (rpc_url, websocket_url) = agave_validator::bridge::config::MultivmConfig::urls();
     let rpc_client = Arc::new(RpcClient::new_with_commitment(
-        rpc_url.to_string(),
+        rpc_url,
         CommitmentConfig::processed(),
     ));
 
@@ -75,7 +73,7 @@ fn tpu_client() -> (
     let tpu_client = match connection_cache {
         ConnectionCache::Quic(cache) => TpuClient::new_with_connection_cache(
             Arc::clone(&rpc_client),
-            websocket_url,
+            &websocket_url,
             TpuClientConfig::default(),
             cache,
         )
