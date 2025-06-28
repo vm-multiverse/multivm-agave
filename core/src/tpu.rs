@@ -58,8 +58,8 @@ use {
 };
 
 pub struct TpuSockets {
-    pub transactions: Vec<UdpSocket>,
-    pub transaction_forwards: Vec<UdpSocket>,
+    pub transactions: Vec<UdpSocket>,  // 主要用于接收外部客户端发来的交易
+    pub transaction_forwards: Vec<UdpSocket>, // 用于接收其他 validator 节点转发过来的交易
     pub vote: Vec<UdpSocket>,
     pub broadcast: Vec<UdpSocket>,
     pub transactions_quic: Vec<UdpSocket>,

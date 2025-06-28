@@ -959,11 +959,6 @@ impl TestValidator {
         rpc_to_plugin_manager_receiver: Option<Receiver<GeyserPluginManagerRequest>>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
 
-        ////
-        ////
-        ////
-        ////
-
         let preserve_ledger = config.ledger_path.is_some();
         let ledger_path = TestValidator::initialize_ledger(mint_address, config)?;
 
@@ -1066,8 +1061,9 @@ impl TestValidator {
             validator_config.tower_storage = tower_storage.clone();
         }
 
-        ////////
-        /// new_with_manual_tick
+        ////
+        //// new_with_manual_tick
+        ////
         let validator = Some(Validator::new_with_manual_tick(
             node,
             Arc::new(validator_identity),

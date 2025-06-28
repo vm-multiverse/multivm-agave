@@ -579,6 +579,9 @@ where
             while progress.block_height <= progress.last_valid_block_height {
                 let num_transactions = pending_transactions.len();
 
+                ////
+                ////
+                ////
                 // Periodically re-send all pending transactions
                 if Instant::now().duration_since(last_resend) > TRANSACTION_RESEND_INTERVAL {
                     // Prepare futures for all transactions

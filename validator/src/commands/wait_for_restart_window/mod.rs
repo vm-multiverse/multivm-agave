@@ -318,6 +318,8 @@ pub fn wait_for_restart_window(
             if monitoring_another_validator {
                 "".to_string()
             } else {
+                ////
+                ////
                 format!(
                     "| Full Snapshot Slot: {} | Incremental Snapshot Slot: {}",
                     snapshot_slot_info

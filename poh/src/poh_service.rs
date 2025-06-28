@@ -108,7 +108,7 @@ impl PohService {
         tick_receiver: Receiver<()>,
     ) -> Self {
 
-        println!("poh_service new_with_manual_tick");
+        // println!("poh_service new_with_manual_tick");
 
         let poh_config = poh_config.clone();
         let tick_producer = Builder::new()
@@ -216,7 +216,7 @@ impl PohService {
         record_receiver: Receiver<Record>,
         tick_receiver: Receiver<()>,
     ) {
-        println!("poh_service manual_tick_producer");
+        // println!("poh_service manual_tick_producer");
 
         let mut last_tick = Instant::now();
         while !poh_exit.load(Ordering::Relaxed) {

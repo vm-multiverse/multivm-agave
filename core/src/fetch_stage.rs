@@ -203,7 +203,11 @@ impl FetchStage {
             Vec::default()
         };
 
+        ////
+        ////
+        ////
         let tpu_vote_stats = Arc::new(StreamerReceiveStats::new("tpu_vote_receiver"));
+
         let tpu_vote_threads: Vec<_> = tpu_vote_sockets
             .into_iter()
             .enumerate()
@@ -224,6 +228,10 @@ impl FetchStage {
             .collect();
 
         let sender = sender.clone();
+
+        ////
+        ////
+        ////
         let poh_recorder = poh_recorder.clone();
 
         let fwd_thread_hdl = Builder::new()

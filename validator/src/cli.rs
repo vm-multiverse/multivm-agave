@@ -2266,7 +2266,7 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> App<
                 .value_name("DIR")
                 .takes_value(true)
                 .required(true)
-                .default_value("test-ledger")
+                .default_value("test-ledger-neo")
                 .help("Use DIR as ledger location"),
         )
         .arg(

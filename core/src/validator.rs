@@ -1093,6 +1093,10 @@ impl Validator {
 
         let staked_nodes = Arc::new(RwLock::new(StakedNodes::default()));
 
+        ////
+        ////
+        ////
+
         let connection_cache = if use_quic {
             let connection_cache = ConnectionCache::new_with_client_options(
                 "connection_cache_tpu_quic",
@@ -1490,6 +1494,10 @@ impl Validator {
         let cluster_slots =
             Arc::new(crate::cluster_slots_service::cluster_slots::ClusterSlots::default());
 
+        ////
+        ////
+        ////
+        ////
         let tvu = Tvu::new(
             vote_account,
             authorized_voter_keypairs,
@@ -1573,6 +1581,9 @@ impl Validator {
             })?;
             return Err(ValidatorError::WenRestartFinished.into());
         }
+
+        // for (i, sock) in node.sockets.tpu.iter().enumerate() {
+        // }
 
         let (tpu, mut key_notifies) = Tpu::new(
             &cluster_info,

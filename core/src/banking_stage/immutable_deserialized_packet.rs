@@ -84,7 +84,12 @@ impl ImmutableDeserializedPacket {
 
         // set compute unit price to zero for vote transactions
         if is_simple_vote {
+            println!("simple_vote");
+            // println!("vote message_hash {:?}", message_hash);
             compute_unit_price = 0;
+        } else {
+            println!("normal sanitized_transaction {:?}" , sanitized_transaction);
+            println!("normal message_hash {:?}", message_hash);
         };
 
         Ok(Self {

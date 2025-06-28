@@ -2228,6 +2228,9 @@ impl ReplayStage {
         }
     }
 
+    ////
+    ////
+    // https://medium.com/crypto-nature/solana-validator-2-transaciton-validation-unit-6c006690c88d
     #[allow(clippy::too_many_arguments)]
     fn replay_blockstore_into_bank(
         bank: &BankWithScheduler,

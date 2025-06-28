@@ -73,7 +73,7 @@ impl Poh {
     }
 
     pub fn record(&mut self, mixin: Hash) -> Option<PohEntry> {
-        println!("poh.rs record");
+        // println!("poh.rs record");
 
         if self.remaining_hashes == 1 {
             return None; // Caller needs to `tick()` first
@@ -91,7 +91,7 @@ impl Poh {
     }
 
     pub fn tick(&mut self) -> Option<PohEntry> {
-        println!("poh.rs tick");
+        // println!("poh.rs tick");
 
         self.hash = hash(self.hash.as_ref());
         self.num_hashes += 1;
