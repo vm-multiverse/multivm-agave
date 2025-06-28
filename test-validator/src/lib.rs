@@ -52,7 +52,7 @@ use {
         native_token::sol_to_lamports,
         pubkey::Pubkey,
         rent::Rent,
-        signature::{read_keypair_file, write_keypair_file, Keypair, Signer},
+        signature::{read_keypair_file, write_keypair_file, Keypair, SeedDerivable, Signer},
     },
     solana_streamer::socket::SocketAddrSpace,
     solana_tpu_client::tpu_client::DEFAULT_TPU_ENABLE_UDP,
@@ -136,6 +136,7 @@ pub struct TestValidatorGenesis {
     pub tpu_enable_udp: bool,
     pub geyser_plugin_manager: Arc<RwLock<GeyserPluginManager>>,
     admin_rpc_service_post_init: Arc<RwLock<Option<AdminRpcRequestMetadataPostInit>>>,
+    deterministic_mode: bool,
 }
 
 impl Default for TestValidatorGenesis {
@@ -169,6 +170,7 @@ impl Default for TestValidatorGenesis {
             geyser_plugin_manager: Arc::new(RwLock::new(GeyserPluginManager::new())),
             admin_rpc_service_post_init:
                 Arc::<RwLock<Option<AdminRpcRequestMetadataPostInit>>>::default(),
+            deterministic_mode: false,
         }
     }
 }
@@ -304,6 +306,11 @@ impl TestValidatorGenesis {
 
     pub fn compute_unit_limit(&mut self, compute_unit_limit: u64) -> &mut Self {
         self.compute_unit_limit = Some(compute_unit_limit);
+        self
+    }
+
+    pub fn set_deterministic_mode(&mut self, deterministic: bool) -> &mut Self {
+        self.deterministic_mode = deterministic;
         self
     }
 
@@ -801,9 +808,29 @@ impl TestValidator {
         mint_address: Pubkey,
         config: &TestValidatorGenesis,
     ) -> Result<PathBuf, Box<dyn std::error::Error>> {
-        let validator_identity = Keypair::new();
-        let validator_vote_account = Keypair::new();
-        let validator_stake_account = Keypair::new();
+        let validator_identity = if config.deterministic_mode {
+            // Use deterministic keypair for consistent genesis hash
+            let deterministic_seed = [3u8; 32];
+            Keypair::from_seed(&deterministic_seed).unwrap()
+        } else {
+            Keypair::new()
+        };
+        
+        let validator_vote_account = if config.deterministic_mode {
+            // Use deterministic keypair for consistent genesis hash
+            let deterministic_seed = [4u8; 32];
+            Keypair::from_seed(&deterministic_seed).unwrap()
+        } else {
+            Keypair::new()
+        };
+        
+        let validator_stake_account = if config.deterministic_mode {
+            // Use deterministic keypair for consistent genesis hash
+            let deterministic_seed = [5u8; 32];
+            Keypair::from_seed(&deterministic_seed).unwrap()
+        } else {
+            Keypair::new()
+        };
         let validator_identity_lamports = sol_to_lamports(500.);
         let validator_stake_lamports = sol_to_lamports(1_000_000.);
         let mint_lamports = sol_to_lamports(500_000_000.);
@@ -896,6 +923,10 @@ impl TestValidator {
 
         for feature in feature_set {
             genesis_utils::activate_feature(&mut genesis_config, feature);
+        }
+
+        if config.deterministic_mode {
+            genesis_config.creation_time = 0;
         }
 
         let ledger_path = match &config.ledger_path {

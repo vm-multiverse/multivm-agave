@@ -27,11 +27,11 @@ use {
       native_token::sol_to_lamports,
       pubkey::Pubkey,
       rent::Rent,
-      signature::{read_keypair_file, write_keypair_file, Keypair, Signer},
+      signature::{read_keypair_file, write_keypair_file, Keypair, SeedDerivable, Signer},
       system_program,
   },
   solana_streamer::socket::SocketAddrSpace,
-  solana_test_validator::*,
+  solana_test_validator::{AccountInfo, TestValidator, TestValidatorGenesis, UpgradeableProgramInfo},
   std::{
       collections::HashSet,
       fs, io,
@@ -65,6 +65,7 @@ fn main() {
 
   let ledger_path = value_t_or_exit!(matches, "ledger_path", PathBuf);
   let reset_ledger = matches.is_present("reset");
+  let deterministic = matches.is_present("deterministic");
 
   let indexes: HashSet<AccountIndex> = matches
       .values_of("account_indexes")
@@ -150,7 +151,16 @@ fn main() {
       .unwrap_or_else(|| {
           read_keypair_file(&cli_config.keypair_path)
               .map(|kp| (kp.pubkey(), false))
-              .unwrap_or_else(|_| (Keypair::new().pubkey(), true))
+              .unwrap_or_else(|_| {
+                  if deterministic {
+                      // Use a deterministic keypair for consistent genesis hash
+                      let deterministic_seed = [1u8; 32];
+                      let keypair = Keypair::from_seed(&deterministic_seed).unwrap();
+                      (keypair.pubkey(), true)
+                  } else {
+                      (Keypair::new().pubkey(), true)
+                  }
+              })
       });
 
   let rpc_port = value_t_or_exit!(matches, "rpc_port", u16);
@@ -309,7 +319,14 @@ fn main() {
   let faucet_lamports = sol_to_lamports(value_of(&matches, "faucet_sol").unwrap());
   let faucet_keypair_file = ledger_path.join("faucet-keypair.json");
   if !faucet_keypair_file.exists() {
-      write_keypair_file(&Keypair::new(), faucet_keypair_file.to_str().unwrap()).unwrap_or_else(
+      let faucet_keypair = if deterministic {
+          // Use a deterministic keypair for consistent genesis hash
+          let deterministic_seed = [2u8; 32];
+          Keypair::from_seed(&deterministic_seed).unwrap()
+      } else {
+          Keypair::new()
+      };
+      write_keypair_file(&faucet_keypair, faucet_keypair_file.to_str().unwrap()).unwrap_or_else(
           |err| {
               println!(
                   "Error: Failed to write {}: {}",
@@ -575,6 +592,11 @@ fn main() {
   // free
   genesis.fee_rate_governor(FeeRateGovernor::new(0, 0));
   genesis.rent(Rent::free());
+
+  // Set deterministic mode if requested
+  if deterministic {
+      genesis.set_deterministic_mode(true);
+  }
 
   match genesis.start_with_mint_address_and_geyser_plugin_rpc_and_manual_tick(
       mint_address,

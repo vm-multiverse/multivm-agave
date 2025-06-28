@@ -2667,14 +2667,23 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> App<
                 .requires("json_rpc_url")
                 .help(
                     "Copy a feature set from the cluster referenced by the --url \
-                     argument in the genesis configuration. If the ledger \
-                     already exists then this parameter is silently ignored",
-                ),
-        )
+                    argument in the genesis configuration. If the ledger \
+                    already exists then this parameter is silently ignored",
+               ),
+      )
+      .arg(
+          Arg::with_name("deterministic")
+              .long("deterministic")
+              .takes_value(false)
+              .help(
+                  "Generate deterministic genesis hash by using fixed keypairs and timestamp. \
+                   This ensures the same genesis hash across multiple validator startups.",
+              ),
+      )
 }
 
 pub struct DefaultTestArgs {
-    pub rpc_port: String,
+   pub rpc_port: String,
     pub faucet_port: String,
     pub limit_ledger_size: String,
     pub faucet_sol: String,
