@@ -1327,15 +1327,15 @@ impl Validator {
 
         // Tick manually now
         let (tick_sender, tick_receiver) = unbounded();
-        std::thread::spawn({
-            let tick_sender = tick_sender.clone();
-            move || loop {
-                if tick_sender.send(()).is_err() {
-                    break;
-                }
-                std::thread::sleep(std::time::Duration::from_secs(1));
-            }
-        });
+        // std::thread::spawn({
+        //     let tick_sender = tick_sender.clone();
+        //     move || loop {
+        //         if tick_sender.send(()).is_err() {
+        //             break;
+        //         }
+        //         std::thread::sleep(std::time::Duration::from_secs(1));
+        //     }
+        // });
 
         let poh_service = PohService::new_with_manual_tick(
             poh_recorder.clone(),
