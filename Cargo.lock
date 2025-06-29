@@ -10687,6 +10687,7 @@ dependencies = [
  "solana-hash",
  "solana-instruction",
  "solana-loader-v2-interface",
+ "solana-loader-v3-interface",
  "solana-message",
  "solana-program",
  "solana-pubkey",
