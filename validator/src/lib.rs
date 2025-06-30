@@ -22,6 +22,7 @@ pub mod cli;
 pub mod commands;
 pub mod dashboard;
 pub mod bridge;
+pub mod multivm_validator;
 
 #[cfg(unix)]
 fn redirect_stderr(filename: &str) {
