@@ -1565,6 +1565,8 @@ impl Validator {
             return Err(ValidatorError::WenRestartFinished.into());
         }
 
+        // 在调用 Tpu::new 前，创建 tick_sender, tick_receiver
+        let (tick_sender, tick_receiver) = crossbeam_channel::unbounded();
         let (tpu, mut key_notifies) = Tpu::new(
             &cluster_info,
             &poh_recorder,
@@ -1612,6 +1614,7 @@ impl Validator {
             config.transaction_struct.clone(),
             config.enable_block_production_forwarding,
             config.generator_config.clone(),
+            tick_sender.clone(), // 传递 tick_sender
         );
 
         datapoint_info!(
@@ -2636,6 +2639,9 @@ impl Validator {
             return Err(ValidatorError::WenRestartFinished.into());
         }
 
+        // 在调用 Tpu::new 前，创建 tick_sender, tick_receiver
+        let (tick_sender, _) = crossbeam_channel::unbounded();
+
         let (tpu, mut key_notifies) = Tpu::new(
             &cluster_info,
             &poh_recorder,
@@ -2683,6 +2689,7 @@ impl Validator {
             config.transaction_struct.clone(),
             config.enable_block_production_forwarding,
             config.generator_config.clone(),
+            tick_sender.clone(), // 传递 tick_sender
         );
 
         datapoint_info!(

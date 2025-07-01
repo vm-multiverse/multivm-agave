@@ -369,6 +369,7 @@ impl BankingStage {
         bank_forks: Arc<RwLock<BankForks>>,
         prioritization_fee_cache: &Arc<PrioritizationFeeCache>,
         enable_forwarding: bool,
+        tick_sender: Sender<()>,
     ) -> Self {
         Self::new_num_threads(
             block_production_method,
@@ -386,6 +387,7 @@ impl BankingStage {
             bank_forks,
             prioritization_fee_cache,
             enable_forwarding,
+            tick_sender,
         )
     }
 
@@ -406,6 +408,7 @@ impl BankingStage {
         bank_forks: Arc<RwLock<BankForks>>,
         prioritization_fee_cache: &Arc<PrioritizationFeeCache>,
         enable_forwarding: bool,
+        tick_sender: Sender<()>,
     ) -> Self {
         match block_production_method {
             BlockProductionMethod::CentralScheduler
@@ -430,6 +433,7 @@ impl BankingStage {
                     bank_forks,
                     prioritization_fee_cache,
                     enable_forwarding,
+                    tick_sender,
                 )
             }
         }
@@ -452,6 +456,7 @@ impl BankingStage {
         bank_forks: Arc<RwLock<BankForks>>,
         prioritization_fee_cache: &Arc<PrioritizationFeeCache>,
         enable_forwarding: bool,
+        tick_sender: Sender<()>,
     ) -> Self {
         assert!(num_threads >= MIN_TOTAL_THREADS);
         // Single thread to generate entries from many banks.
@@ -498,6 +503,7 @@ impl BankingStage {
                     latest_unprocessed_votes.clone(),
                     vote_source,
                 ),
+                tick_sender.clone(),
             ));
         }
 
@@ -532,6 +538,7 @@ impl BankingStage {
                     bank_forks,
                     enable_forwarding,
                     data_budget,
+                    tick_sender,
                 );
             }
             TransactionStructure::View => {
@@ -553,6 +560,7 @@ impl BankingStage {
                     bank_forks,
                     enable_forwarding,
                     data_budget,
+                    tick_sender,
                 );
             }
         }
@@ -575,6 +583,7 @@ impl BankingStage {
         bank_forks: Arc<RwLock<BankForks>>,
         enable_forwarding: bool,
         data_budget: Arc<DataBudget>,
+        tick_sender: Sender<()>,
     ) {
         // Create channels for communication between scheduler and workers
         let num_workers = (num_threads).saturating_sub(NUM_VOTE_PROCESSING_THREADS);
@@ -594,6 +603,7 @@ impl BankingStage {
                     poh_recorder.read().unwrap().new_recorder(),
                     QosService::new(id),
                     log_messages_bytes_limit,
+                    tick_sender.clone(),
                 ),
                 finished_work_sender.clone(),
                 poh_recorder.read().unwrap().new_leader_bank_notifier(),
@@ -691,6 +701,7 @@ impl BankingStage {
         log_messages_bytes_limit: Option<usize>,
         mut forwarder: Forwarder<T>,
         unprocessed_transaction_storage: UnprocessedTransactionStorage,
+        tick_sender: Sender<()>,
     ) -> JoinHandle<()> {
         let mut packet_receiver = PacketReceiver::new(id, packet_receiver);
         let consumer = Consumer::new(
@@ -698,6 +709,7 @@ impl BankingStage {
             transaction_recorder,
             QosService::new(id),
             log_messages_bytes_limit,
+            tick_sender,
         );
 
         Builder::new()
@@ -955,6 +967,7 @@ mod tests {
                 bank_forks,
                 &Arc::new(PrioritizationFeeCache::new(0u64)),
                 false,
+                unbounded(),
             );
             drop(non_vote_sender);
             drop(tpu_vote_sender);
@@ -1017,6 +1030,7 @@ mod tests {
                 bank_forks,
                 &Arc::new(PrioritizationFeeCache::new(0u64)),
                 false,
+                unbounded(),
             );
             trace!("sending bank");
             drop(non_vote_sender);
@@ -1099,6 +1113,7 @@ mod tests {
                 bank_forks.clone(), // keep a local-copy of bank-forks so worker threads do not lose weak access to bank-forks
                 &Arc::new(PrioritizationFeeCache::new(0u64)),
                 false,
+                unbounded(),
             );
 
             // fund another account so we can send 2 good transactions in a single batch.
@@ -1269,6 +1284,7 @@ mod tests {
                     bank_forks,
                     &Arc::new(PrioritizationFeeCache::new(0u64)),
                     false,
+                    unbounded(),
                 );
 
                 // wait for banking_stage to eat the packets
@@ -1461,6 +1477,7 @@ mod tests {
                 bank_forks,
                 &Arc::new(PrioritizationFeeCache::new(0u64)),
                 false,
+                unbounded(),
             );
 
             let keypairs = (0..100).map(|_| Keypair::new()).collect_vec();

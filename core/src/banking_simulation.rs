@@ -837,6 +837,7 @@ impl BankingSimulator {
             bank_forks.clone(),
             prioritization_fee_cache,
             false,
+            tick_sender.clone(),
         );
 
         let (&_slot, &raw_base_event_time) = freeze_time_by_slot

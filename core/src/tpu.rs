@@ -24,7 +24,7 @@ use {
         validator::{BlockProductionMethod, GeneratorConfig, TransactionStructure},
     },
     bytes::Bytes,
-    crossbeam_channel::{unbounded, Receiver},
+    crossbeam_channel::{unbounded, Receiver, Sender},
     solana_client::connection_cache::ConnectionCache,
     solana_gossip::cluster_info::ClusterInfo,
     solana_ledger::{
@@ -123,6 +123,7 @@ impl Tpu {
         transaction_struct: TransactionStructure,
         enable_block_production_forwarding: bool,
         _generator_config: Option<GeneratorConfig>, /* vestigial code for replay invalidator */
+        tick_sender: Sender<()>,
     ) -> (Self, Vec<Arc<dyn NotifyKeyUpdate + Sync + Send>>) {
         let TpuSockets {
             transactions: transactions_sockets,
@@ -264,6 +265,7 @@ impl Tpu {
             bank_forks.clone(),
             prioritization_fee_cache,
             enable_block_production_forwarding,
+            tick_sender.clone(),
         );
 
         let (entry_receiver, tpu_entry_notifier) =

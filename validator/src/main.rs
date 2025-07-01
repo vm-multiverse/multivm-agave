@@ -1463,6 +1463,18 @@ pub fn main() {
     vote_quic_server_config.max_connections_per_peer = 1;
     vote_quic_server_config.max_unstaked_connections = 0;
 
+    let (tick_sender, tick_receiver) = unbounded();
+    let poh_service = poh_service::PohService::new_with_manual_tick(
+        poh_recorder.clone(),
+        &poh_config,
+        poh_exit.clone(),
+        ticks_per_slot,
+        pinned_cpu_core,
+        hashes_per_batch,
+        record_receiver,
+        tick_receiver,
+    );
+
     let validator = match Validator::new(
         node,
         identity_keypair,
