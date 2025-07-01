@@ -125,6 +125,7 @@ impl Tpu {
         _generator_config: Option<GeneratorConfig>, /* vestigial code for replay invalidator */
         tick_sender: Sender<()>,
     ) -> (Self, Vec<Arc<dyn NotifyKeyUpdate + Sync + Send>>) {
+
         let TpuSockets {
             transactions: transactions_sockets,
             transaction_forwards: tpu_forwards_sockets,
@@ -138,7 +139,8 @@ impl Tpu {
         let (packet_sender, packet_receiver) = unbounded();
         let (vote_packet_sender, vote_packet_receiver) = unbounded();
         let (forwarded_packet_sender, forwarded_packet_receiver) = unbounded();
-        let fetch_stage = FetchStage::new_with_sender(
+
+        let fetch_stage = FetchStage::new_with_sender( //
             transactions_sockets,
             tpu_forwards_sockets,
             tpu_vote_sockets,

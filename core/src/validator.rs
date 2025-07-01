@@ -1337,7 +1337,7 @@ impl Validator {
         //     }
         // });
 
-        let poh_service = PohService::new_with_manual_tick(
+        let poh_service = PohService::new_with_manual_tick( //
             poh_recorder.clone(),
             &genesis_config.poh_config,
             exit.clone(),

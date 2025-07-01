@@ -62,7 +62,7 @@ impl FetchStage {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn new_with_sender(
+    pub fn new_with_sender( //
         sockets: Vec<UdpSocket>,
         tpu_forwards_sockets: Vec<UdpSocket>,
         tpu_vote_sockets: Vec<UdpSocket>,

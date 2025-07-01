@@ -1464,7 +1464,7 @@ pub fn main() {
     vote_quic_server_config.max_unstaked_connections = 0;
 
     let (tick_sender, tick_receiver) = unbounded();
-    let poh_service = poh_service::PohService::new_with_manual_tick(
+    let poh_service = poh_service::PohService::new_with_manual_tick( //
         poh_recorder.clone(),
         &poh_config,
         poh_exit.clone(),

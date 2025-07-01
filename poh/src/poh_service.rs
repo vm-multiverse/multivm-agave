@@ -94,7 +94,7 @@ impl PohTiming {
 }
 
 impl PohService {
-    pub fn new_with_manual_tick(
+    pub fn new_with_manual_tick( //
         poh_recorder: Arc<RwLock<PohRecorder>>,
         poh_config: &PohConfig,
         poh_exit: Arc<AtomicBool>,
@@ -110,7 +110,7 @@ impl PohService {
             .spawn(move || {
                 if poh_config.hashes_per_tick.is_none() {
                     if poh_config.target_tick_count.is_none() {
-                        Self::manual_tick_producer(
+                        Self::manual_tick_producer( //
                             poh_recorder,
                             &poh_config,
                             &poh_exit,
@@ -196,7 +196,7 @@ impl PohService {
         target_tick_duration_ns.saturating_sub(adjustment_per_tick)
     }
 
-    fn manual_tick_producer(
+    fn manual_tick_producer( // producer slot
         poh_recorder: Arc<RwLock<PohRecorder>>,
         poh_config: &PohConfig,
         poh_exit: &AtomicBool,
@@ -205,8 +205,14 @@ impl PohService {
     ) {
         let mut last_tick = Instant::now();
         while !poh_exit.load(Ordering::Relaxed) {
-            // receive a tick signal
-            let _tick_signal = tick_receiver.recv();
+            // 禁止出块：如果设置了环境变量 DISABLE_BLOCK_PRODUCTION，则直接退出循环
+            if std::env::var("DISABLE_BLOCK_PRODUCTION").is_ok() {
+                println!("manual_tick_producer");
+                println!("检测到 DISABLE_BLOCK_PRODUCTION 环境变量，manual_tick_producer 立即退出，禁止出块");
+                break;
+            }
+
+            let _tick_signal = tick_receiver.recv(); // 接收 tick_sender.send(()) 发来的信号
 
             let remaining_tick_time = poh_config
                 .target_tick_duration
@@ -222,14 +228,24 @@ impl PohService {
         }
     }
 
-    fn low_power_tick_producer(
+    fn low_power_tick_producer( // solana-test-validator
         poh_recorder: Arc<RwLock<PohRecorder>>,
         poh_config: &PohConfig,
         poh_exit: &AtomicBool,
         record_receiver: Receiver<Record>,
     ) {
+
+        println!("low_power_tick_producer");
+
         let mut last_tick = Instant::now();
         while !poh_exit.load(Ordering::Relaxed) {
+            // 禁止出块：如果设置了环境变量 DISABLE_BLOCK_PRODUCTION，则直接退出循环
+            // if std::env::var("DISABLE_BLOCK_PRODUCTION").is_ok() {
+            //     println!("low_power_tick_producer");
+            //     println!("检测到 DISABLE_BLOCK_PRODUCTION 环境变量，low_power_tick_producer 立即退出，禁止出块");
+            //     break;
+            // }
+
             let remaining_tick_time = poh_config
                 .target_tick_duration
                 .saturating_sub(last_tick.elapsed());
@@ -240,7 +256,7 @@ impl PohService {
             );
             if remaining_tick_time.is_zero() {
                 last_tick = Instant::now();
-                poh_recorder.write().unwrap().tick();
+                poh_recorder.write().unwrap().tick(); // 出块
             }
         }
     }
@@ -277,6 +293,13 @@ impl PohService {
         let mut last_tick = Instant::now();
         let num_ticks = poh_config.target_tick_count.unwrap();
         while elapsed_ticks < num_ticks {
+            // 禁止出块：如果设置了环境变量 DISABLE_BLOCK_PRODUCTION，则直接退出循环
+            // if std::env::var("DISABLE_BLOCK_PRODUCTION").is_ok() {
+            //     println!("short_lived_low_power_tick_producer");
+            //     println!("检测到 DISABLE_BLOCK_PRODUCTION 环境变量，short_lived_low_power_tick_producer 立即退出，禁止出块");
+            //     break;
+            // }
+
             let remaining_tick_time = poh_config
                 .target_tick_duration
                 .saturating_sub(last_tick.elapsed());
@@ -398,6 +421,13 @@ impl PohService {
         let mut timing = PohTiming::new();
         let mut next_record = None;
         loop {
+            // 禁止出块：如果设置了环境变量 DISABLE_BLOCK_PRODUCTION，则直接退出循环
+            if std::env::var("DISABLE_BLOCK_PRODUCTION").is_ok() {
+                println!("tick_producer");
+                println!("检测到 DISABLE_BLOCK_PRODUCTION 环境变量，tick_producer 立即退出，禁止出块");
+                break;
+            }
+
             let should_tick = Self::record_or_hash(
                 &mut next_record,
                 &poh_recorder,
@@ -407,6 +437,7 @@ impl PohService {
                 &poh,
                 target_ns_per_tick,
             );
+
             if should_tick {
                 // Lock PohRecorder only for the final hash. record_or_hash will lock PohRecorder for record calls but not for hashing.
                 {
