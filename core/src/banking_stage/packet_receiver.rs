@@ -105,6 +105,9 @@ impl PacketReceiver {
         let mut dropped_packets_count = 0;
         let mut newly_buffered_packets_count = 0;
         let mut newly_buffered_forwarded_packets_count = 0;
+
+        println!("buffer_packets: deserialized_packets.len() = {}", packet_count);
+
         Self::push_unprocessed(
             unprocessed_transaction_storage,
             deserialized_packets,
@@ -150,6 +153,8 @@ impl PacketReceiver {
                 .count();
             slot_metrics_tracker
                 .increment_newly_buffered_packets_count(deserialized_packets.len() as u64);
+
+            println!("push_unprocessed: deserialized_packets.len() = {}", deserialized_packets.len());
 
             let insert_packet_batches_summary =
                 unprocessed_transaction_storage.insert_batch(deserialized_packets);

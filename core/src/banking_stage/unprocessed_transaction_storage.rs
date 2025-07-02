@@ -352,6 +352,9 @@ impl UnprocessedTransactionStorage {
         &mut self,
         deserialized_packets: Vec<ImmutableDeserializedPacket>,
     ) -> InsertPacketBatchSummary {
+
+        println!("insert_batchd deserialized_packets {:?}", deserialized_packets.len());
+
         match self {
             Self::VoteStorage(vote_storage) => {
                 InsertPacketBatchSummary::from(vote_storage.insert_batch(deserialized_packets))

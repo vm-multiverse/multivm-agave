@@ -86,7 +86,7 @@ impl ImmutableDeserializedPacket {
         if is_simple_vote {
             compute_unit_price = 0;
             println!("vote tx hash {:?}", message_hash);
-        }else {
+        } else {
             println!("normal tx hash {:?}", message_hash);
         };
 

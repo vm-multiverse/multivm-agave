@@ -101,6 +101,7 @@ const MIN_THREADS_BANKING: u32 = 1;
 const MIN_TOTAL_THREADS: u32 = NUM_VOTE_PROCESSING_THREADS + MIN_THREADS_BANKING;
 
 const SLOT_BOUNDARY_CHECK_PERIOD: Duration = Duration::from_millis(10);
+const PENDING_TX_THRESHOLD: usize = 1;
 
 #[derive(Debug, Default)]
 pub struct BankingStageStats {
@@ -709,7 +710,7 @@ impl BankingStage {
             transaction_recorder,
             QosService::new(id),
             log_messages_bytes_limit,
-            tick_sender,
+            tick_sender.clone(),
         );
 
         Builder::new()
@@ -722,6 +723,7 @@ impl BankingStage {
                     &consumer,
                     id,
                     unprocessed_transaction_storage,
+                    &tick_sender,
                 )
             })
             .unwrap()
@@ -798,11 +800,13 @@ impl BankingStage {
         consumer: &Consumer,
         id: u32,
         mut unprocessed_transaction_storage: UnprocessedTransactionStorage,
+        tick_sender: &Sender<()>,
     ) {
         let mut banking_stage_stats = BankingStageStats::new(id);
 
         let mut slot_metrics_tracker = LeaderSlotMetricsTracker::new(id);
         let mut last_metrics_update = Instant::now();
+        let mut last_tick_sent = false;
 
         loop {
             if !unprocessed_transaction_storage.is_empty()
@@ -828,6 +832,20 @@ impl BankingStage {
             ) {
                 Ok(()) | Err(RecvTimeoutError::Timeout) => (),
                 Err(RecvTimeoutError::Disconnected) => break,
+            }
+
+            println!("buffered after receive: {}", unprocessed_transaction_storage.len());
+
+            // if unprocessed_transaction_storage.len() >= PENDING_TX_THRESHOLD {
+            if true {
+                if !last_tick_sent {
+                    // println!("满足阈值，发送 tick");
+                    tick_sender.send(()).unwrap();
+                    last_tick_sent = true;
+                }
+            } else {
+                // println!("不满足阈值，不发送 tick");
+                last_tick_sent = false;
             }
             banking_stage_stats.report(1000);
         }

@@ -171,9 +171,9 @@ impl TransactionRecorder {
                 Ok(starting_index) => {
                     starting_transaction_index = starting_index;
                     // send a tick to the poh service
-                    let (tick_sender, _tick_receiver) = unbounded();
-                    tick_sender.send(()).unwrap();
-                    log::info!("Sent tick to poh service");
+                    // let (tick_sender, _tick_receiver) = unbounded();
+                    // tick_sender.send(()).unwrap();
+                    // log::info!("Sent tick to poh service");
                 }
                 Err(PohRecorderError::MaxHeightReached) => {
                     return RecordTransactionsSummary {

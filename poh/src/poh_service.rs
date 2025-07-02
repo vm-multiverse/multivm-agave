@@ -15,7 +15,16 @@ use {
         thread::{self, Builder, JoinHandle},
         time::{Duration, Instant},
     },
+    std::sync::atomic::{AtomicUsize},
+    std::sync::OnceLock,
 };
+
+static PENDING_TX_COUNT: OnceLock<AtomicUsize> = OnceLock::new();
+const PENDING_TX_THRESHOLD: usize = 1;
+
+fn get_pending_tx_count() -> usize {
+    PENDING_TX_COUNT.get_or_init(|| AtomicUsize::new(0)).load(std::sync::atomic::Ordering::Relaxed)
+}
 
 pub struct PohService {
     tick_producer: JoinHandle<()>,
@@ -205,12 +214,6 @@ impl PohService {
     ) {
         let mut last_tick = Instant::now();
         while !poh_exit.load(Ordering::Relaxed) {
-            // 禁止出块：如果设置了环境变量 DISABLE_BLOCK_PRODUCTION，则直接退出循环
-            if std::env::var("DISABLE_BLOCK_PRODUCTION").is_ok() {
-                println!("manual_tick_producer");
-                println!("检测到 DISABLE_BLOCK_PRODUCTION 环境变量，manual_tick_producer 立即退出，禁止出块");
-                break;
-            }
 
             let _tick_signal = tick_receiver.recv(); // 接收 tick_sender.send(()) 发来的信号
 
@@ -239,12 +242,11 @@ impl PohService {
 
         let mut last_tick = Instant::now();
         while !poh_exit.load(Ordering::Relaxed) {
-            // 禁止出块：如果设置了环境变量 DISABLE_BLOCK_PRODUCTION，则直接退出循环
-            // if std::env::var("DISABLE_BLOCK_PRODUCTION").is_ok() {
-            //     println!("low_power_tick_producer");
-            //     println!("检测到 DISABLE_BLOCK_PRODUCTION 环境变量，low_power_tick_producer 立即退出，禁止出块");
-            //     break;
-            // }
+
+            if get_pending_tx_count() < PENDING_TX_THRESHOLD {
+                // 不够阈值，不出块
+                continue;
+            }
 
             let remaining_tick_time = poh_config
                 .target_tick_duration
@@ -293,12 +295,6 @@ impl PohService {
         let mut last_tick = Instant::now();
         let num_ticks = poh_config.target_tick_count.unwrap();
         while elapsed_ticks < num_ticks {
-            // 禁止出块：如果设置了环境变量 DISABLE_BLOCK_PRODUCTION，则直接退出循环
-            // if std::env::var("DISABLE_BLOCK_PRODUCTION").is_ok() {
-            //     println!("short_lived_low_power_tick_producer");
-            //     println!("检测到 DISABLE_BLOCK_PRODUCTION 环境变量，short_lived_low_power_tick_producer 立即退出，禁止出块");
-            //     break;
-            // }
 
             let remaining_tick_time = poh_config
                 .target_tick_duration
@@ -421,12 +417,6 @@ impl PohService {
         let mut timing = PohTiming::new();
         let mut next_record = None;
         loop {
-            // 禁止出块：如果设置了环境变量 DISABLE_BLOCK_PRODUCTION，则直接退出循环
-            if std::env::var("DISABLE_BLOCK_PRODUCTION").is_ok() {
-                println!("tick_producer");
-                println!("检测到 DISABLE_BLOCK_PRODUCTION 环境变量，tick_producer 立即退出，禁止出块");
-                break;
-            }
 
             let should_tick = Self::record_or_hash(
                 &mut next_record,
