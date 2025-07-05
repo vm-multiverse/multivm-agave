@@ -108,6 +108,41 @@ impl Consumer {
         }
     }
 
+    /// Trigger immediate tick for transaction-driven block production
+    fn trigger_immediate_tick() {
+        use std::sync::LazyLock;
+        use std::sync::Mutex;
+        use crossbeam_channel::Sender;
+        
+        // Global storage for the tick sender from validator.rs
+        static GLOBAL_TICK_SENDER: LazyLock<Mutex<Option<Sender<()>>>> = 
+            LazyLock::new(|| Mutex::new(None));
+        
+        if let Ok(guard) = GLOBAL_TICK_SENDER.lock() {
+            if let Some(ref sender) = *guard {
+                if let Err(_) = sender.send(()) {
+                    eprintln!("Failed to send tick signal");
+                }
+            } else {
+                eprintln!("WARNING: No tick sender available");
+            }
+        }
+    }
+    
+    /// Set the global tick sender (called from validator.rs)
+    pub fn set_tick_sender(sender: Sender<()>) {
+        use std::sync::LazyLock;
+        use std::sync::Mutex;
+        use crossbeam_channel::Sender;
+        
+        static GLOBAL_TICK_SENDER: LazyLock<Mutex<Option<Sender<()>>>> = 
+            LazyLock::new(|| Mutex::new(None));
+        
+        if let Ok(mut guard) = GLOBAL_TICK_SENDER.lock() {
+            *guard = Some(sender);
+        }
+    }
+
     pub fn consume_buffered_packets(
         &self,
         bank_start: &BankStart,
@@ -368,6 +403,11 @@ impl Consumer {
             }
             // Don't exit early on any other type of error, continue processing...
             chunk_start = chunk_end;
+        }
+
+        // Trigger tick immediately if transactions were committed
+        if total_transaction_counts.committed_transactions_count > 0 {
+            Self::trigger_immediate_tick();
         }
 
         ProcessTransactionsSummary {
