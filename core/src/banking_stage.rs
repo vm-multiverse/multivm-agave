@@ -814,8 +814,18 @@ impl BankingStage {
                 &mut banking_stage_stats,
                 &mut slot_metrics_tracker,
             ) {
-                Ok(()) | Err(RecvTimeoutError::Timeout) => (),
-                Err(RecvTimeoutError::Disconnected) => break,
+                Ok(()) => {
+                    let packet_count = unprocessed_transaction_storage.len();
+                    if packet_count > 0 {
+                        println!("📥 Received {} packets, storage now contains {} total", 
+                               packet_count, unprocessed_transaction_storage.len());
+                    }
+                },
+                Err(RecvTimeoutError::Timeout) => (),
+                Err(RecvTimeoutError::Disconnected) => {
+                    println!("📡 Packet receiver disconnected, exiting banking stage loop");
+                    break;
+                },
             }
             banking_stage_stats.report(1000);
         }

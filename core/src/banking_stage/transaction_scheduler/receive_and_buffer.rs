@@ -112,6 +112,35 @@ impl ReceiveAndBuffer for SanitizedTransactionReceiveAndBuffer {
             Ok(receive_packet_results) => {
                 let num_received_packets = receive_packet_results.deserialized_packets.len();
 
+                // 🚀 检查是否有非投票交易，如果有则触发立即 tick
+                let non_vote_count = receive_packet_results.deserialized_packets
+                    .iter()
+                    .filter(|packet| !packet.is_simple_vote())
+                    .count();
+
+                if non_vote_count > 0 {
+                    println!("🚀🚀🚀 transaction_scheduler 检测到 {} 个非投票交易，触发立即 tick！", non_vote_count);
+                    // 触发立即 tick
+                    match crate::banking_stage::consumer::Consumer::get_tick_sender() {
+                        Some(tick_sender) => {
+                            println!("📡 tick_sender 存在，尝试发送tick信号...");
+                            match tick_sender.try_send(()) {
+                                Ok(()) => {
+                                    println!("✅ transaction_scheduler 成功触发tick！");
+                                }
+                                Err(e) => {
+                                    println!("❌ transaction_scheduler tick trigger 失败: {:?}", e);
+                                }
+                            }
+                        }
+                        None => {
+                            println!("❌ tick_sender 为 None！全局 tick_sender 未初始化！");
+                        }
+                    }
+                } else if num_received_packets > 0 {
+                    println!("📊 transaction_scheduler 收到 {} 个包，但都是投票交易，不触发 tick", num_received_packets);
+                }
+
                 count_metrics.update(|count_metrics| {
                     saturating_add_assign!(count_metrics.num_received, num_received_packets);
                 });

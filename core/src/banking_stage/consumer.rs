@@ -108,32 +108,55 @@ impl Consumer {
             log_messages_bytes_limit,
         }
     }
+}
 
-        /// Trigger immediate tick for transaction-driven block production
+// 全局 tick sender 存储 - 确保只有一个实例
+static GLOBAL_TICK_SENDER: LazyLock<Mutex<Option<Sender<()>>>> =
+    LazyLock::new(|| Mutex::new(None));
+
+impl Consumer {
+    /// Trigger immediate tick for transaction-driven block production
     fn trigger_immediate_tick() {
-        // Global storage for the tick sender from validator.rs
-        static GLOBAL_TICK_SENDER: LazyLock<Mutex<Option<Sender<()>>>> =
-            LazyLock::new(|| Mutex::new(None));
+        println!("🎯 trigger_immediate_tick() called");
 
         if let Ok(guard) = GLOBAL_TICK_SENDER.lock() {
             if let Some(ref sender) = *guard {
-                if let Err(_) = sender.send(()) {
-                    eprintln!("Failed to send tick signal");
+                match sender.send(()) {
+                    Ok(()) => println!("✅ Tick signal sent successfully"),
+                    Err(_) => println!("❌ Failed to send tick signal - channel disconnected"),
                 }
             } else {
-                eprintln!("WARNING: No tick sender available");
+                println!("⚠️  WARNING: No tick sender available - global variable not initialized");
             }
+        } else {
+            println!("❌ Failed to acquire lock on global tick sender");
         }
     }
 
     /// Set the global tick sender (called from validator.rs)
     pub fn set_tick_sender(sender: Sender<()>) {
-        // Global storage for the tick sender from validator.rs
-        static GLOBAL_TICK_SENDER: LazyLock<Mutex<Option<Sender<()>>>> =
-            LazyLock::new(|| Mutex::new(None));
-
+        println!("🎛️  Consumer::set_tick_sender() 被调用");
         if let Ok(mut guard) = GLOBAL_TICK_SENDER.lock() {
             *guard = Some(sender);
+            println!("✅ 全局 tick_sender 已设置");
+        } else {
+            println!("❌ 无法获取 tick_sender 锁");
+        }
+    }
+
+    /// Get the global tick sender (called from other modules)
+    pub fn get_tick_sender() -> Option<Sender<()>> {
+        if let Ok(guard) = GLOBAL_TICK_SENDER.lock() {
+            let result = guard.clone();
+            if result.is_some() {
+                println!("📡 get_tick_sender() 返回了有效的 sender");
+            } else {
+                println!("📡 get_tick_sender() 返回了 None");
+            }
+            result
+        } else {
+            println!("❌ get_tick_sender() 无法获取锁");
+            None
         }
     }
 
@@ -144,10 +167,12 @@ impl Consumer {
         banking_stage_stats: &BankingStageStats,
         slot_metrics_tracker: &mut LeaderSlotMetricsTracker,
     ) {
+        println!("🍽️  Consumer::consume_buffered_packets called for slot: {}", bank_start.working_bank.slot());
         let mut rebuffered_packet_count = 0;
         let mut consumed_buffered_packets_count = 0;
         let mut proc_start = Measure::start("consume_buffered_process");
         let num_packets_to_process = unprocessed_transaction_storage.len();
+        println!("📦 Number of packets to process: {}", num_packets_to_process);
 
         let reached_end_of_slot = unprocessed_transaction_storage.process_packets(
             bank_start.working_bank.clone(),
@@ -201,6 +226,13 @@ impl Consumer {
         rebuffered_packet_count: &mut usize,
         packets_to_process: &[Arc<ImmutableDeserializedPacket>],
     ) -> Option<Vec<usize>> {
+        // DEBUG: Print packet processing info
+        println!("📦 Consumer::do_process_packets - processing {} packets, bank slot: {}, collector_id: {:?}",
+                packets_to_process.len(),
+                bank_start.working_bank.slot(),
+                bank_start.working_bank.collector_id());
+        println!("📦 Working Bank available: true, slot: {}", bank_start.working_bank.slot());
+
         if payload.reached_end_of_slot {
             return None;
         }
@@ -315,10 +347,20 @@ impl Consumer {
         bank_creation_time: &Instant,
         transactions: &[impl TransactionWithMeta],
     ) -> ProcessTransactionsSummary {
-        // Trigger tick immediately when we have transactions to process
-        if !transactions.is_empty() {
+        // DEBUG: Print transaction processing info
+        println!("🔄 Consumer::process_transactions called with {} transactions, bank slot: {}",
+                transactions.len(), bank.slot());
+
+        // Trigger tick immediately when we have NON-VOTE transactions to process
+        let non_vote_count = transactions.iter().filter(|tx| !tx.is_simple_vote_transaction()).count();
+        if non_vote_count > 0 {
+            println!("⚡ Triggering immediate tick due to {} non-vote transactions (total: {})",
+                    non_vote_count, transactions.len());
             Self::trigger_immediate_tick();
+        } else if !transactions.is_empty() {
+            println!("🗳️  Skipping tick trigger - only {} vote transactions found", transactions.len());
         }
+
         let mut chunk_start = 0;
         let mut all_retryable_tx_indexes = vec![];
         let mut total_transaction_counts = CommittedTransactionsCounts::default();
@@ -403,6 +445,12 @@ impl Consumer {
             chunk_start = chunk_end;
         }
 
+
+        // DEBUG: Print final transaction processing results
+        println!("✅ Transaction processing completed: committed={}, attempted={}, retryable={}",
+                total_transaction_counts.committed_transactions_count,
+                total_transaction_counts.attempted_processing_count,
+                all_retryable_tx_indexes.len());
 
         ProcessTransactionsSummary {
             reached_max_poh_height,

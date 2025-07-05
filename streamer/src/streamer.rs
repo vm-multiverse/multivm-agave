@@ -136,6 +136,7 @@ fn recv_loop(
 
             if let Ok(len) = packet::recv_from(&mut packet_batch, socket, coalesce) {
                 if len > 0 {
+                    println!("📨 UDP received {} packets on socket", len);
                     let StreamerReceiveStats {
                         packets_count,
                         packet_batches_count,
@@ -153,7 +154,9 @@ fn recv_loop(
                     packet_batch
                         .iter_mut()
                         .for_each(|p| p.meta_mut().set_from_staked_node(is_staked_service));
+                    println!("📤 Streamer sending packet_batch with {} packets to banking stage", packet_batch.len());
                     packet_batch_sender.send(packet_batch)?;
+                    println!("📤 Streamer successfully sent packet_batch to banking stage");
                 }
                 break;
             }

@@ -203,14 +203,24 @@ impl PohService {
         record_receiver: Receiver<Record>,
         tick_receiver: Receiver<()>,
     ) {
+        println!("🚀 Manual tick producer started - waiting for tick signals");
         let mut last_tick = Instant::now();
         while !poh_exit.load(Ordering::Relaxed) {
             // receive a tick signal
-            let _tick_signal = tick_receiver.recv();
+            println!("⏳ Waiting for tick signal...");
+            match tick_receiver.recv() {
+                Ok(_) => println!("📨 Received tick signal!"),
+                Err(e) => {
+                    println!("❌ Tick receiver error: {:?}", e);
+                    break;
+                }
+            }
 
             let remaining_tick_time = poh_config
                 .target_tick_duration
                 .saturating_sub(last_tick.elapsed());
+            
+            println!("🔄 Processing records and generating tick...");
             Self::read_record_receiver_and_process(
                 &poh_recorder,
                 &record_receiver,
@@ -218,8 +228,15 @@ impl PohService {
             );
 
             last_tick = Instant::now();
+            let current_slot = {
+                let poh = poh_recorder.read().unwrap();
+                poh.start_slot()
+            };
+            println!("⏰ Executing tick for slot: {}", current_slot);
             poh_recorder.write().unwrap().tick();
+            println!("✅ Tick completed for slot: {}", current_slot);
         }
+        println!("🛑 Manual tick producer exiting");
     }
 
     fn low_power_tick_producer(

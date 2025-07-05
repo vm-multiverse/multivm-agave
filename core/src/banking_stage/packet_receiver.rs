@@ -33,6 +33,7 @@ impl PacketReceiver {
         banking_stage_stats: &mut BankingStageStats,
         slot_metrics_tracker: &mut LeaderSlotMetricsTracker,
     ) -> Result<(), RecvTimeoutError> {
+        // println!("🚨 PacketReceiver::receive_and_buffer_packets 被调用！");
         let (result, recv_time_us) = measure_us!({
             let recv_timeout = Self::get_receive_timeout(unprocessed_transaction_storage);
             let mut recv_and_buffer_measure = Measure::start("recv_and_buffer");
@@ -41,13 +42,27 @@ impl PacketReceiver {
                     recv_timeout,
                     unprocessed_transaction_storage.max_receive_size(),
                     |packet| {
-                        packet.check_insufficent_compute_unit_limit()?;
-                        packet.check_excessive_precompiles()?;
+                        let thread_id = std::thread::current().id();
+                        println!("🔍 [{:?}] PacketReceiver packet_filter 开始检查", thread_id);
+                        if let Err(e) = packet.check_insufficent_compute_unit_limit() {
+                            println!("❌ [{:?}] FILTER FAILED: Compute unit limit: {:?}", thread_id, e);
+                            return Err(e);
+                        }
+                        if let Err(e) = packet.check_excessive_precompiles() {
+                            println!("❌ [{:?}] FILTER FAILED: Precompiles: {:?}", thread_id, e);
+                            return Err(e);
+                        }
+                        println!("✅ [{:?}] PacketReceiver packet_filter 通过！", thread_id);
                         Ok(packet)
                     },
                 )
                 // Consumes results if Ok, otherwise we keep the Err
+                .map_err(|e| {
+                    // println!("❌ PacketReceiver 出错：{:?}", e);
+                    e
+                })
                 .map(|receive_packet_results| {
+                    println!("🎯🎯🎯 SUCCESS: PacketReceiver 收到结果，准备调用 buffer_packets，包含 {} packets", receive_packet_results.deserialized_packets.len());
                     self.buffer_packets(
                         receive_packet_results,
                         unprocessed_transaction_storage,
@@ -127,6 +142,9 @@ impl PacketReceiver {
         banking_stage_stats
             .current_buffered_packets_count
             .swap(unprocessed_transaction_storage.len(), Ordering::Relaxed);
+
+        println!("📥 PacketReceiver::buffer_packets - received {} packets, id: {}", packet_count, self.id);
+
     }
 
     fn push_unprocessed(
