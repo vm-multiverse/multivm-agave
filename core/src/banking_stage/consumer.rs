@@ -315,6 +315,10 @@ impl Consumer {
         bank_creation_time: &Instant,
         transactions: &[impl TransactionWithMeta],
     ) -> ProcessTransactionsSummary {
+        // Trigger tick immediately when we have transactions to process
+        if !transactions.is_empty() {
+            Self::trigger_immediate_tick();
+        }
         let mut chunk_start = 0;
         let mut all_retryable_tx_indexes = vec![];
         let mut total_transaction_counts = CommittedTransactionsCounts::default();
@@ -399,10 +403,6 @@ impl Consumer {
             chunk_start = chunk_end;
         }
 
-        // Trigger tick immediately if transactions were committed
-        if total_transaction_counts.committed_transactions_count > 0 {
-            Self::trigger_immediate_tick();
-        }
 
         ProcessTransactionsSummary {
             reached_max_poh_height,
