@@ -12,6 +12,7 @@ use {
         BankingStageStats,
     },
     agave_feature_set as feature_set,
+    crossbeam_channel::Sender,
     itertools::Itertools,
     solana_fee::FeeFeatures,
     solana_ledger::token_balances::collect_token_balances,
@@ -42,7 +43,7 @@ use {
     solana_timings::ExecuteTimings,
     std::{
         num::Saturating,
-        sync::{atomic::Ordering, Arc},
+        sync::{atomic::Ordering, Arc, LazyLock, Mutex},
         time::Instant,
     },
 };
@@ -108,16 +109,12 @@ impl Consumer {
         }
     }
 
-    /// Trigger immediate tick for transaction-driven block production
+        /// Trigger immediate tick for transaction-driven block production
     fn trigger_immediate_tick() {
-        use std::sync::LazyLock;
-        use std::sync::Mutex;
-        use crossbeam_channel::Sender;
-        
         // Global storage for the tick sender from validator.rs
-        static GLOBAL_TICK_SENDER: LazyLock<Mutex<Option<Sender<()>>>> = 
+        static GLOBAL_TICK_SENDER: LazyLock<Mutex<Option<Sender<()>>>> =
             LazyLock::new(|| Mutex::new(None));
-        
+
         if let Ok(guard) = GLOBAL_TICK_SENDER.lock() {
             if let Some(ref sender) = *guard {
                 if let Err(_) = sender.send(()) {
@@ -128,16 +125,13 @@ impl Consumer {
             }
         }
     }
-    
+
     /// Set the global tick sender (called from validator.rs)
     pub fn set_tick_sender(sender: Sender<()>) {
-        use std::sync::LazyLock;
-        use std::sync::Mutex;
-        use crossbeam_channel::Sender;
-        
-        static GLOBAL_TICK_SENDER: LazyLock<Mutex<Option<Sender<()>>>> = 
+        // Global storage for the tick sender from validator.rs
+        static GLOBAL_TICK_SENDER: LazyLock<Mutex<Option<Sender<()>>>> =
             LazyLock::new(|| Mutex::new(None));
-        
+
         if let Ok(mut guard) = GLOBAL_TICK_SENDER.lock() {
             *guard = Some(sender);
         }
