@@ -245,6 +245,25 @@ impl PohService {
         }
     }
 
+    fn transaction_driven_tick_producer(
+        poh_recorder: Arc<RwLock<PohRecorder>>,
+        poh_config: &PohConfig,
+        poh_exit: &AtomicBool,
+        record_receiver: Receiver<Record>,
+    ) {
+        // Transaction-driven mode: only tick when transactions are processed
+        // No automatic ticking based on time
+        while !poh_exit.load(Ordering::Relaxed) {
+            // Wait indefinitely for record requests (transactions)
+            Self::read_record_receiver_and_process(
+                &poh_recorder,
+                &record_receiver,
+                std::time::Duration::MAX, // Wait indefinitely
+            );
+            // Tick is only triggered by external signal via manual_tick_producer
+        }
+    }
+
     pub fn read_record_receiver_and_process(
         poh_recorder: &Arc<RwLock<PohRecorder>>,
         record_receiver: &Receiver<Record>,

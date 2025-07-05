@@ -2403,7 +2403,13 @@ impl Validator {
         let wait_for_vote_to_start_leader =
             !waited_for_supermajority && !config.no_wait_for_vote_to_start_leader;
 
-        let poh_service = PohService::new(
+        // Tick manually now - only transaction-driven, no timer
+        let (tick_sender, tick_receiver) = unbounded();
+        
+        // Set the global tick sender for Consumer to use
+        crate::banking_stage::consumer::Consumer::set_tick_sender(tick_sender.clone());
+
+        let poh_service = PohService::new_with_manual_tick(
             poh_recorder.clone(),
             &genesis_config.poh_config,
             exit.clone(),
@@ -2411,6 +2417,7 @@ impl Validator {
             config.poh_pinned_cpu_core,
             config.poh_hashes_per_batch,
             record_receiver,
+            tick_receiver,
         );
         assert_eq!(
             blockstore.get_new_shred_signals_len(),
