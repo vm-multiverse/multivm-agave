@@ -631,14 +631,14 @@ impl TestValidatorGenesis {
             socket_addr_space,
             rpc_to_plugin_manager_receiver,
         )
-        .inspect(|test_validator| {
-            let runtime = tokio::runtime::Builder::new_current_thread()
-                .enable_io()
-                .enable_time()
-                .build()
-                .unwrap();
-            runtime.block_on(test_validator.wait_for_nonzero_fees());
-        })
+        // .inspect(|test_validator| {
+        //     let runtime = tokio::runtime::Builder::new_current_thread()
+        //         .enable_io()
+        //         .enable_time()
+        //         .build()
+        //         .unwrap();
+        //     runtime.block_on(test_validator.wait_for_nonzero_fees());
+        // })
     }
 
     /// Start a test validator with the address of the mint account that will receive tokens
