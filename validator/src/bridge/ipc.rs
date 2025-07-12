@@ -1,6 +1,6 @@
 use {
     crossbeam_channel::Sender,
-    log::{error, info, warn},
+    log::{error, info, warn, debug},
     serde::{Deserialize, Serialize},
     std::{
         io::{Read, Write},
