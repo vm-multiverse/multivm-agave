@@ -267,7 +267,7 @@ impl IpcClient {
         match response {
             IpcMessage::Response { success, message } => {
                 if success {
-                    info!("Tick sent successfully: {}", message);
+                    debug!("Tick sent successfully: {}", message);
                 } else {
                     error!("Tick sending failed: {}", message);
                 }
