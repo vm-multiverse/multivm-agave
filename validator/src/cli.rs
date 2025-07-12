@@ -2681,8 +2681,8 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> App<
               ),
       )
       .arg(
-          Arg::with_name("c")
-              .long("ticl-ipc-path")
+          Arg::with_name("tick_ipc_path")
+              .long("tick-ipc-path")
               .value_name("PATH")
               .takes_value(true)
               .required(true)
