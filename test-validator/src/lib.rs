@@ -624,12 +624,14 @@ impl TestValidatorGenesis {
         mint_address: Pubkey,
         socket_addr_space: SocketAddrSpace,
         rpc_to_plugin_manager_receiver: Option<Receiver<GeyserPluginManagerRequest>>,
+        tick_receiver: Receiver<()>,
     ) -> Result<TestValidator, Box<dyn std::error::Error>> {
         TestValidator::start_with_manual_tick(
             mint_address,
             self,
             socket_addr_space,
             rpc_to_plugin_manager_receiver,
+            tick_receiver
         )
         // .inspect(|test_validator| {
         //     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -988,6 +990,7 @@ impl TestValidator {
         config: &TestValidatorGenesis,
         socket_addr_space: SocketAddrSpace,
         rpc_to_plugin_manager_receiver: Option<Receiver<GeyserPluginManagerRequest>>,
+        tick_receiver: Receiver<()>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let preserve_ledger = config.ledger_path.is_some();
         let ledger_path = TestValidator::initialize_ledger(mint_address, config)?;
@@ -1105,6 +1108,7 @@ impl TestValidator {
             socket_addr_space,
             ValidatorTpuConfig::new_for_tests(config.tpu_enable_udp),
             config.admin_rpc_service_post_init.clone(),
+            tick_receiver
         )?);
 
         // Needed to avoid panics in `solana-responder-gossip` in tests that create a number of
