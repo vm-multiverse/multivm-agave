@@ -132,6 +132,14 @@ impl Bank {
             error_counters.blockhash_not_found += 1;
             Err(TransactionError::BlockhashNotFound)
         }
+        // Always return Ok to bypass the age check.
+        // For a no-fee network, lamports_per_signature is always 0.
+        // const LAMPORTS_PER_SIGNATURE: u64 = 0;
+        // 
+        // Ok(CheckedTransactionDetails::new(
+        //     None,
+        //     LAMPORTS_PER_SIGNATURE,
+        // ))
     }
 
     pub(super) fn check_load_and_advance_message_nonce_account(
