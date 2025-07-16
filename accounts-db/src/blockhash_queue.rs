@@ -107,16 +107,18 @@ impl BlockhashQueue {
     }
 
     fn is_hash_index_valid(last_hash_index: u64, max_age: usize, hash_index: u64) -> bool {
-        last_hash_index - hash_index <= max_age as u64
+        true // NB!
+        // last_hash_index - hash_index <= max_age as u64
     }
 
     pub fn register_hash(&mut self, hash: &Hash, lamports_per_signature: u64) {
         self.last_hash_index += 1;
-        if self.hashes.len() >= self.max_age {
-            self.hashes.retain(|_, info| {
-                Self::is_hash_index_valid(self.last_hash_index, self.max_age, info.hash_index)
-            });
-        }
+        // MB!
+        // if self.hashes.len() >= self.max_age {
+        //     self.hashes.retain(|_, info| {
+        //         Self::is_hash_index_valid(self.last_hash_index, self.max_age, info.hash_index)
+        //     });
+        // }
 
         self.hashes.insert(
             *hash,
