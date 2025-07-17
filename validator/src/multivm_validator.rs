@@ -607,7 +607,8 @@ pub fn run_multivm_validator() {
 
     // IPC server for tick
     let (tick_sender, tick_receiver) = unbounded();
-    let mut tick_ipc_server = IpcServer::new(tick_ipc_path, tick_sender);
+    let (tick_done_sender, tick_done_receiver) = unbounded();
+    let mut tick_ipc_server = IpcServer::new(tick_ipc_path, tick_sender, tick_done_receiver);
     thread::spawn(move || {
         if let Err(e) = tick_ipc_server.start() {
             eprintln!("Server error: {}", e);
@@ -619,6 +620,7 @@ pub fn run_multivm_validator() {
         socket_addr_space,
         rpc_to_plugin_manager_receiver,
         tick_receiver,
+        tick_done_sender,
     ) {
         Ok(test_validator) => {
             if let Some(dashboard) = dashboard {

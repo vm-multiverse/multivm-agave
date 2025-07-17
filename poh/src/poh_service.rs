@@ -2,7 +2,7 @@
 //! "ticks", a measure of time in the PoH stream
 use {
     crate::poh_recorder::{PohRecorder, Record},
-    crossbeam_channel::Receiver,
+    crossbeam_channel::{Receiver, Sender},
     log::*,
     solana_entry::poh::Poh,
     solana_measure::{measure::Measure, measure_us},
@@ -103,6 +103,7 @@ impl PohService {
         _hashes_per_batch: u64,
         record_receiver: Receiver<Record>,
         tick_receiver: Receiver<()>,
+        tick_done_sender: Sender<()>,
     ) -> Self {
         let poh_config = poh_config.clone();
         let tick_producer = Builder::new()
@@ -116,6 +117,7 @@ impl PohService {
                             &poh_exit,
                             record_receiver,
                             tick_receiver,
+                            tick_done_sender,
                         );
                     } else {
                         todo!("manual tick producer with target tick count");
@@ -202,6 +204,7 @@ impl PohService {
         poh_exit: &AtomicBool,
         record_receiver: Receiver<Record>,
         tick_receiver: Receiver<()>,
+        tick_done_sender: Sender<()>,
     ) {
         let mut last_tick = Instant::now();
         while !poh_exit.load(Ordering::Relaxed) {
@@ -219,6 +222,7 @@ impl PohService {
 
             last_tick = Instant::now();
             poh_recorder.write().unwrap().tick();
+            let _ = tick_done_sender.send(());
         }
     }
 

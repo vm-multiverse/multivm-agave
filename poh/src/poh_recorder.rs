@@ -904,10 +904,12 @@ impl PohRecorder {
                 let target_time = target_time.unwrap();
                 // sleep is not accurate enough to get a predictable time.
                 // Kernel can not schedule the thread for a while.
-                while Instant::now() < target_time {
-                    // TODO: a caller could possibly desire to reset or record while we're spinning here
-                    std::hint::spin_loop();
-                }
+
+                // For multivm, tick is independent of time
+                // while Instant::now() < target_time {
+                //     // TODO: a caller could possibly desire to reset or record while we're spinning here
+                //     std::hint::spin_loop();
+                // }
             });
             self.total_sleep_us += sleep_us;
         }

@@ -1,6 +1,6 @@
 use {
-    crossbeam_channel::Sender,
-    log::{error, info, warn, debug},
+    crossbeam_channel::{Receiver, Sender},
+    log::{debug, error, info, warn},
     serde::{Deserialize, Serialize},
     std::{
         io::{Read, Write},
@@ -26,15 +26,21 @@ pub enum IpcMessage {
 pub struct IpcServer {
     socket_path: String,
     tick_sender: Sender<()>,
+    tick_done_receiver: Receiver<()>,
     listener: Option<UnixListener>,
 }
 
 impl IpcServer {
     /// Create a new IPC server, initialized with tick_sender obtained from unbound()
-    pub fn new(socket_path: String, tick_sender: Sender<()>) -> Self {
+    pub fn new(
+        socket_path: String,
+        tick_sender: Sender<()>,
+        tick_done_receiver: Receiver<()>,
+    ) -> Self {
         Self {
             socket_path,
             tick_sender,
+            tick_done_receiver,
             listener: None,
         }
     }
@@ -64,8 +70,10 @@ impl IpcServer {
             match stream {
                 Ok(stream) => {
                     let tick_sender = self.tick_sender.clone();
+                    let tick_done_receiver = self.tick_done_receiver.clone();
                     thread::spawn(move || {
-                        if let Err(e) = Self::handle_client(stream, tick_sender) {
+                        if let Err(e) = Self::handle_client(stream, tick_sender, tick_done_receiver)
+                        {
                             error!("Error handling client connection: {}", e);
                         }
                     });
@@ -83,6 +91,7 @@ impl IpcServer {
     fn handle_client(
         mut stream: UnixStream,
         tick_sender: Sender<()>,
+        tick_done_receiver: Receiver<()>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         info!("New client connection");
 
@@ -130,7 +139,7 @@ impl IpcServer {
             };
 
             // Process message
-            let response = Self::process_message(message, &tick_sender);
+            let response = Self::process_message(message, &tick_sender, &tick_done_receiver);
 
             // Send response
             if let Err(e) = Self::send_response(&mut stream, response) {
@@ -143,7 +152,11 @@ impl IpcServer {
     }
 
     /// Process IPC message
-    fn process_message(message: IpcMessage, tick_sender: &Sender<()>) -> IpcMessage {
+    fn process_message(
+        message: IpcMessage,
+        tick_sender: &Sender<()>,
+        tick_done_receiver: &Receiver<()>,
+    ) -> IpcMessage {
         match message {
             IpcMessage::Tick { message } => {
                 info!("Received tick message: {}", message);
@@ -156,9 +169,23 @@ impl IpcServer {
                     match tick_sender.send(()) {
                         Ok(_) => {
                             info!("Successfully triggered tick");
-                            IpcMessage::Response {
-                                success: true,
-                                message: "Tick triggered successfully".to_string(),
+                            // Wait for the tick to be done
+                            match tick_done_receiver.recv() {
+                                Ok(_) => {
+                                    info!("Tick processing confirmed");
+                                    IpcMessage::Response {
+                                        success: true,
+                                        message: "Tick triggered and processed successfully"
+                                            .to_string(),
+                                    }
+                                }
+                                Err(e) => {
+                                    error!("Error waiting for tick done signal: {}", e);
+                                    IpcMessage::Response {
+                                        success: false,
+                                        message: format!("Failed to get tick confirmation: {}", e),
+                                    }
+                                }
                             }
                         }
                         Err(e) => {
@@ -287,6 +314,7 @@ mod tests {
 
     #[test]
     fn test_ipc_tick_communication() {
+        solana_logger::setup();
         // Create temporary directory for socket
         let temp_dir = tempdir().unwrap();
         let socket_path = temp_dir
@@ -297,9 +325,11 @@ mod tests {
 
         // Create tick channel
         let (tick_sender, tick_receiver) = unbounded::<()>();
+        let (tick_done_sender, tick_done_receiver) = unbounded::<()>();
+        tick_done_sender.send(()).unwrap(); // mock tick done
 
         // Create and start IPC server
-        let mut server = IpcServer::new(socket_path.clone(), tick_sender);
+        let mut server = IpcServer::new(socket_path.clone(), tick_sender, tick_done_receiver);
         let server_socket_path = socket_path.clone();
         thread::spawn(move || {
             if let Err(e) = server.start() {
@@ -318,9 +348,10 @@ mod tests {
         assert!(result.is_ok());
         assert!(result.unwrap());
 
-        // Verify tick was received
+        // Verify tick was received and our mock service "processed" it
         let tick_received = tick_receiver.recv_timeout(Duration::from_millis(100));
         assert!(tick_received.is_ok());
+        tick_done_sender.send(()).unwrap();
 
         println!("IPC tick communication test completed");
     }
@@ -331,5 +362,11 @@ mod tests {
         let result = client.tick();
         assert!(result.is_ok());
         assert!(result.unwrap());
+
+        // loop {
+        //     let result = client.tick();
+        //     assert!(result.is_ok());
+        //     assert!(result.unwrap());
+        // }
     }
 }

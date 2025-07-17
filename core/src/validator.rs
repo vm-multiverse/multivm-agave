@@ -31,7 +31,7 @@ use {
         tvu::{Tvu, TvuConfig, TvuSockets},
     },
     anyhow::{anyhow, Context, Result},
-    crossbeam_channel::{bounded, unbounded, Receiver},
+    crossbeam_channel::{bounded, unbounded, Receiver, Sender},
     lazy_static::lazy_static,
     quinn::Endpoint,
     solana_accounts_db::{
@@ -608,6 +608,7 @@ impl Validator {
         tpu_config: ValidatorTpuConfig,
         admin_rpc_service_post_init: Arc<RwLock<Option<AdminRpcRequestMetadataPostInit>>>,
         tick_receiver: Receiver<()>,
+        tick_done_sender: Sender<()>,
     ) -> Result<Self> {
         let ValidatorTpuConfig {
             use_quic,
@@ -1335,6 +1336,7 @@ impl Validator {
             config.poh_hashes_per_batch,
             record_receiver,
             tick_receiver,
+            tick_done_sender,
         );
         assert_eq!(
             blockstore.get_new_shred_signals_len(),
