@@ -3,6 +3,7 @@ use {
         admin_rpc_service,
         bridge::{
             self,
+            genesis,
             ipc::{self, IpcServer},
             util,
         },
@@ -165,7 +166,7 @@ pub fn run_multivm_validator() {
                 .unwrap_or_else(|_| {
                     if deterministic {
                         // Use a deterministic keypair for consistent genesis hash
-                        (util::mint_keypair().pubkey(), true)
+                        (genesis::mint_keypair().pubkey(), true)
                     } else {
                         (Keypair::new().pubkey(), true)
                     }
@@ -330,7 +331,7 @@ pub fn run_multivm_validator() {
     if !faucet_keypair_file.exists() {
         let faucet_keypair = if deterministic {
             // Use a deterministic keypair for consistent genesis hash
-            util::faucet_keypair()
+            genesis::faucet_keypair()
         } else {
             Keypair::new()
         };
