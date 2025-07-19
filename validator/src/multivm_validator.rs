@@ -1,7 +1,11 @@
 use {
     crate::{
         admin_rpc_service,
-        bridge::ipc::{self, IpcServer},
+        bridge::{
+            self,
+            ipc::{self, IpcServer},
+            util,
+        },
         cli,
         dashboard::Dashboard,
         ledger_lockfile, lock_ledger, println_name_value, redirect_stderr_to_file,
@@ -161,9 +165,7 @@ pub fn run_multivm_validator() {
                 .unwrap_or_else(|_| {
                     if deterministic {
                         // Use a deterministic keypair for consistent genesis hash
-                        let deterministic_seed = [1u8; 32];
-                        let keypair = Keypair::from_seed(&deterministic_seed).unwrap();
-                        (keypair.pubkey(), true)
+                        (util::mint_keypair().pubkey(), true)
                     } else {
                         (Keypair::new().pubkey(), true)
                     }
@@ -328,8 +330,7 @@ pub fn run_multivm_validator() {
     if !faucet_keypair_file.exists() {
         let faucet_keypair = if deterministic {
             // Use a deterministic keypair for consistent genesis hash
-            let deterministic_seed = [2u8; 32];
-            Keypair::from_seed(&deterministic_seed).unwrap()
+            util::faucet_keypair()
         } else {
             Keypair::new()
         };
