@@ -108,6 +108,24 @@ where
                 saturating_add_assign!(timing_metrics.decision_time_us, decision_time_us);
             });
             let new_leader_slot = decision.bank_start().map(|b| b.working_bank.slot());
+            
+            // 打印 slot 的 decision
+            // match &decision {
+            //     crate::banking_stage::decision_maker::BufferedPacketsDecision::Consume(bank_start) => {
+            //         println!("Slot {} Decision: Consume (bank slot: {})",
+            //             new_leader_slot.unwrap_or(0),
+            //             bank_start.working_bank.slot());
+            //     }
+            //     crate::banking_stage::decision_maker::BufferedPacketsDecision::Forward => {
+            //         println!("Slot {} Decision: Forward", new_leader_slot.unwrap_or(0));
+            //     }
+            //     crate::banking_stage::decision_maker::BufferedPacketsDecision::ForwardAndHold => {
+            //         println!("Slot {} Decision: ForwardAndHold", new_leader_slot.unwrap_or(0));
+            //     }
+            //     crate::banking_stage::decision_maker::BufferedPacketsDecision::Hold => {
+            //         println!("Slot {} Decision: Hold", new_leader_slot.unwrap_or(0));
+            //     }
+            // }
             self.leader_detection_metrics
                 .update_and_maybe_report(decision.bank_start());
             self.count_metrics

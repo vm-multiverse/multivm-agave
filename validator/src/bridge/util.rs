@@ -22,7 +22,7 @@ use {
 /// - 轮询间隔：100毫秒
 ///
 /// ### 参数
-/// - `tick_client`: IPC客户端，用于在交易发送前后执行tick操作
+/// - `tick_client`: IPC客户端，用于在轮询过程中执行tick操作
 /// - `rpc_client`: Solana RPC客户端，用于发送交易和查询状态
 /// - `transaction`: 要发送的交易对象
 ///
@@ -59,10 +59,10 @@ pub fn send_and_confirm_transaction(
 ///
 /// 这是核心的交易发送和确认函数，提供完整的交易生命周期管理。
 /// 该函数会执行以下步骤：
-/// 1. 发送前执行tick操作
-/// 2. 发送交易到网络
-/// 3. 发送后执行多次tick操作（3次）
-/// 4. 轮询交易状态直到达到processed承诺级别
+/// 1. 发送交易到网络获取签名
+/// 2. 轮询交易状态，每次轮询前执行tick操作
+/// 3. 检查交易是否达到processed承诺级别
+/// 4. 重复轮询直到确认成功或达到最大重试次数
 ///
 /// ### 参数
 /// - `tick_client`: IPC客户端，用于与验证器进行tick同步
@@ -76,8 +76,8 @@ pub fn send_and_confirm_transaction(
 /// - `Err(Box<dyn std::error::Error + Send + Sync>)`: 操作失败时返回错误
 ///
 /// ### 错误情况
-/// - tick操作失败（发送前或发送后）
 /// - 交易发送到网络失败
+/// - tick操作失败（轮询过程中）
 /// - 交易在网络中执行失败
 /// - 达到最大重试次数仍未确认（超时）
 /// - RPC调用异常
@@ -87,9 +87,10 @@ pub fn send_and_confirm_transaction(
 /// 但可能还未达到最终确认状态。
 ///
 /// ### 注意事项
-/// - 函数会在发送后执行3次tick操作，这是为了确保验证器状态同步
+/// - 函数会在每次轮询前执行一次tick操作，确保验证器状态同步
 /// - 轮询过程中的临时错误不会立即终止，会继续重试
 /// - 只有交易执行错误才会立即返回失败
+/// - 每次轮询间会等待指定的轮询间隔时间
 pub fn send_and_confirm_transaction_with_config(
     tick_client: &IpcClient,
     rpc_client: &RpcClient,
@@ -97,16 +98,7 @@ pub fn send_and_confirm_transaction_with_config(
     max_retries: u32,
     poll_interval: Duration,
 ) -> Result<Signature, Box<dyn std::error::Error + Send + Sync>> {
-    // Step 1: Call tick before sending transaction
-    tick_client.tick().map_err(|e| {
-        error!("Failed to tick before sending transaction: {}", e);
-        Box::new(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("Tick failed: {}", e),
-        )) as Box<dyn std::error::Error + Send + Sync>
-    })?;
-
-    // Step 2: Send transaction to get signature
+    // Step 1: Send transaction to get signature
     let signature = rpc_client.send_transaction(transaction).map_err(|e| {
         error!("Failed to send transaction: {}", e);
         Box::new(std::io::Error::new(
@@ -117,37 +109,21 @@ pub fn send_and_confirm_transaction_with_config(
 
     debug!("Transaction sent with signature: {}", signature);
 
-    // Step 3: Call tick again after sending
-    tick_client.tick().map_err(|e| {
-        error!("Failed to tick after sending transaction: {}", e);
-        Box::new(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("Post-send tick failed: {}", e),
-        )) as Box<dyn std::error::Error + Send + Sync>
-    })?;
-
-    tick_client.tick().map_err(|e| {
-        error!("Failed to tick (2nd time) after sending transaction: {}", e);
-        Box::new(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("Post-send tick failed: {}", e),
-        )) as Box<dyn std::error::Error + Send + Sync>
-    })?;
-
-    tick_client.tick().map_err(|e| {
-        error!("Failed to tick (3rd time) after sending transaction: {}", e);
-        Box::new(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("Post-send tick failed: {}", e),
-        )) as Box<dyn std::error::Error + Send + Sync>
-    })?;
-
-    // Step 4: Poll until commitment level is processed
+    // Step 2: Poll until commitment level is processed
     for attempt in 1..=max_retries {
         debug!(
             "Polling transaction status, attempt {}/{}",
             attempt, max_retries
         );
+
+        // Step 3: Poll until commitment level is processed
+        tick_client.tick().map_err(|e| {
+            error!("Failed to tick during polling: {}", e);
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Tick failed: {}", e),
+            )) as Box<dyn std::error::Error + Send + Sync>
+        })?;
 
         match rpc_client.get_signature_status_with_commitment(
             &signature,

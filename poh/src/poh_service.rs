@@ -211,6 +211,7 @@ impl PohService {
             // receive a tick signal
             let _tick_signal = tick_receiver.recv();
 
+            // WJY: 正常交易 9.1 外部 tick 出发，然后开始读取
             let remaining_tick_time = poh_config
                 .target_tick_duration
                 .saturating_sub(last_tick.elapsed());

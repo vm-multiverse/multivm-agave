@@ -10,8 +10,10 @@ license = { workspace = true }
 edition = { workspace = true }
 
 [dependencies]
+bincode = { workspace = true }
 core_affinity = { workspace = true }
 crossbeam-channel = { workspace = true }
+lazy_static = { workspace = true }
 log = { workspace = true }
 solana-clock = { workspace = true }
 solana-entry = { workspace = true }
@@ -25,6 +27,7 @@ solana-runtime = { workspace = true }
 solana-time-utils = { workspace = true }
 solana-transaction = { workspace = true }
 thiserror = { workspace = true }
+serde = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
@@ -38,6 +41,7 @@ solana-runtime = { workspace = true, features = ["dev-context-only-utils"] }
 solana-sha256-hasher = { workspace = true }
 solana-signer = { workspace = true }
 solana-system-transaction = { workspace = true }
+tempfile = { workspace = true }
 
 [features]
 dev-context-only-utils = []

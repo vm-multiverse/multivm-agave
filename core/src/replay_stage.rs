@@ -716,7 +716,8 @@ impl ReplayStage {
                     &mut replay_timing,
                 );
                 generate_new_bank_forks_time.stop();
-
+                
+                // WJY: 没有 bank 会检查是否为 leader 然后创建一个 bank
                 let mut tpu_has_bank = poh_recorder.read().unwrap().has_bank();
 
                 let mut replay_active_banks_time = Measure::start("replay_active_banks_time");
@@ -836,6 +837,7 @@ impl ReplayStage {
 
                 // Check to remove any duplicated slots from fork choice
                 let mut process_duplicate_slots_time = Measure::start("process_duplicate_slots");
+                // WJY: 这里也有一个
                 if !tpu_has_bank {
                     Self::process_duplicate_slots(
                         &blockstore,
@@ -2098,10 +2100,13 @@ impl ReplayStage {
                     parent_slot,
                 } => (poh_slot, parent_slot),
                 PohLeaderStatus::NotReached => {
+                    println!("{} poh_recorder hasn't reached_leader_slot", my_pubkey);
                     trace!("{} poh_recorder hasn't reached_leader_slot", my_pubkey);
                     return false;
                 }
             };
+        
+        println!("poh slot: {}, parent: slot: {}", poh_slot, parent_slot);
 
         trace!("{} reached_leader_slot", my_pubkey);
 
@@ -2214,13 +2219,17 @@ impl ReplayStage {
             // make sure parent is frozen for finalized hashes via the above
             // new()-ing of its child bank
             banking_tracer.hash_event(parent.slot(), &parent.last_blockhash(), &parent.hash());
-
+            
+            // WJY: 在这里换新的 bank
             update_bank_forks_and_poh_recorder_for_new_tpu_bank(
                 bank_forks,
                 poh_recorder,
                 tpu_bank,
                 track_transaction_indexes,
             );
+
+            // WJY: 在这里打印从 slot 几换到 slot 几
+            println!("[Replay Stage] Bank switched from slot {} to {}", parent_slot, poh_slot);
             true
         } else {
             error!("{} No next leader found", my_pubkey);
