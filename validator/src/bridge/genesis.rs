@@ -55,7 +55,7 @@ mod tests {
         let faucet_keypair = super::faucet_keypair();
 
         // 测试次数
-        let test_count = 500;
+        let test_count = 1000;
         
         // 初始转账金额
         let base_transfer_amount = 1_000_000_000;
