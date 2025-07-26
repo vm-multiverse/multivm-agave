@@ -106,9 +106,9 @@ impl BlockhashQueue {
         self.last_hash = Some(*hash);
     }
 
-    fn is_hash_index_valid(last_hash_index: u64, max_age: usize, hash_index: u64) -> bool {
+    fn is_hash_index_valid(_last_hash_index: u64, _max_age: usize, _hash_index: u64) -> bool {
         true // NB!
-        // last_hash_index - hash_index <= max_age as u64
+             // last_hash_index - hash_index <= max_age as u64
     }
 
     pub fn register_hash(&mut self, hash: &Hash, lamports_per_signature: u64) {

@@ -901,7 +901,7 @@ impl PohRecorder {
             self.flush_cache_tick_us += flush_cache_and_tick_us;
 
             let (_, sleep_us) = measure_us!({
-                let target_time = target_time.unwrap();
+                let _target_time = target_time.unwrap();
                 // sleep is not accurate enough to get a predictable time.
                 // Kernel can not schedule the thread for a while.
 
