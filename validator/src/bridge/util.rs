@@ -107,13 +107,6 @@ pub fn send_and_confirm_transaction_with_config(
         )) as Box<dyn std::error::Error + Send + Sync>
     })?;
 
-    tick_client.tick().map_err(|e| {
-        error!("Failed to tick during polling: {}", e);
-        Box::new(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("Tick failed: {}", e),
-        )) as Box<dyn std::error::Error + Send + Sync>
-    })?;
 
     debug!("Transaction sent with signature: {}", signature);
 
@@ -163,7 +156,14 @@ pub fn send_and_confirm_transaction_with_config(
                 warn!("Error checking transaction status: {}, retrying...", e);
             }
         }
-
+        // retry结束
+        tick_client.tick().map_err(|e| {
+            error!("Failed to tick during polling: {}", e);
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Tick failed: {}", e),
+            )) as Box<dyn std::error::Error + Send + Sync>
+        })?;
         // Wait before next poll
         std::thread::sleep(poll_interval);
     }

@@ -1,6 +1,7 @@
 //! The `replay_stage` replays transactions broadcast by the leader.
 
 use {
+
     crate::{
         banking_stage::update_bank_forks_and_poh_recorder_for_new_tpu_bank,
         banking_trace::BankingTracer,
@@ -51,6 +52,7 @@ use {
     },
     solana_measure::measure::Measure,
     solana_poh::poh_recorder::{PohLeaderStatus, PohRecorder, GRACE_TICKS_FACTOR, MAX_GRACE_SLOTS},
+    solana_poh::ipc::IpcClient,
     solana_rpc::{
         block_meta_service::BlockMetaSender,
         optimistically_confirmed_bank_tracker::{BankNotification, BankNotificationSenderConfig},
@@ -2106,7 +2108,7 @@ impl ReplayStage {
                 }
             };
         
-        println!("poh slot: {}, parent: slot: {}", poh_slot, parent_slot);
+        // println!("poh slot: {}, parent: slot: {}", poh_slot, parent_slot);
 
         trace!("{} reached_leader_slot", my_pubkey);
 
@@ -2229,7 +2231,10 @@ impl ReplayStage {
             );
 
             // WJY: 在这里打印从 slot 几换到 slot 几
-            println!("[Replay Stage] Bank switched from slot {} to {}", parent_slot, poh_slot);
+            // println!("[Replay Stage] Bank switched from slot {} to {}", parent_slot, poh_slot);
+            let client = IpcClient::new("/tmp/solana-private-validator".to_string());
+            let _result = client.tick();
+            // println!("switch tick");
             true
         } else {
             error!("{} No next leader found", my_pubkey);

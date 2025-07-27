@@ -159,7 +159,7 @@ impl TransactionTicker {
     }
 
     pub fn get_info(&self) -> (u128, u128) {
-        return (self.tick_height, self.tick_slot);
+        (self.tick_height, self.tick_slot)
     }
 }
 
@@ -258,19 +258,19 @@ impl TransactionRecorder {
             (tick_height, tick_slot) = ticker.get_info();
             // println!("TransactionTicker Info - tick_height: {}, tick_slot: {}", tick_height, tick_slot);
         }
-        if tick_slot % 2 == 0 {
+        if bank_slot % 2 == 0 && !is_vote{
             let client = IpcClient::new("/tmp/solana-private-validator".to_string());
             let _result = client.tick();
-            // println!("谁来都 tick");
-        } else {
-            if is_vote {
-                let client = IpcClient::new("/tmp/solana-private-validator".to_string());
-                let _result = client.tick();
-                // println!("只能投票 tick");
-            } else {
-                // println!("无法 tick");
-            }
         }
+        // else {
+        //     if is_vote {
+        //         // let client = IpcClient::new("/tmp/solana-private-validator".to_string());
+        //         // let _ = client.tick();
+        //         println!("奇数， 投票");
+        //     } else {
+        //         println!("奇数，交易");
+        //     }
+        // }
 
         // Besides validator exit, this timeout should primarily be seen to affect test execution environments where the various pieces can be shutdown abruptly
         let mut is_exited = false;

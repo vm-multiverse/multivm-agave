@@ -482,7 +482,7 @@ impl BankingStage {
         ] {
             bank_thread_hdls.push(Self::spawn_thread_local_multi_iterator_thread(
                 id,
-                packet_receiver,
+                packet_receiver, // YZM: 这个是tx
                 decision_maker.clone(),
                 committer.clone(),
                 transaction_recorder.clone(),
@@ -497,7 +497,7 @@ impl BankingStage {
                 UnprocessedTransactionStorage::new_vote_storage(
                     latest_unprocessed_votes.clone(),
                     vote_source,
-                ),
+                ), // YZM: 这里是vote
             ));
         }
 
@@ -725,6 +725,7 @@ impl BankingStage {
         slot_metrics_tracker: &mut LeaderSlotMetricsTracker,
     ) {
         if unprocessed_transaction_storage.should_not_process() {
+
             return;
         }
         let (decision, make_decision_us) =

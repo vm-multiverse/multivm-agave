@@ -10,4 +10,4 @@ extern crate solana_metrics;
 #[macro_use]
 extern crate assert_matches;
 
-mod ipc;
+pub mod ipc;

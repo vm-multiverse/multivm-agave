@@ -686,16 +686,16 @@ impl Consumer {
         } else {
             false
         };
-        println!("WJY START - Thread: {:?}, Slot: {}, IsVote: {}", thread_id, slot, is_vote);
-        
+        // println!("WJY START - Thread: {:?}, Slot: {}, IsVote: {}", thread_id, slot, is_vote);
+
         let (record_transactions_summary, record_us) = measure_us!(self
             .transaction_recorder
             .record_transactions(bank.slot(), processed_transactions, is_vote));
         execute_and_commit_timings.record_us = record_us;
         
         // WJY: 打印结束信息
-        println!("WJY END - Thread: {:?}, Slot: {}, IsVote: {}", thread_id, slot, is_vote);
-        println!();
+        // println!("WJY END - Thread: {:?}, Slot: {}, IsVote: {}", thread_id, slot, is_vote);
+        // println!();
 
         let RecordTransactionsSummary {
             result: record_transactions_result,
