@@ -33,6 +33,7 @@ impl PacketReceiver {
         banking_stage_stats: &mut BankingStageStats,
         slot_metrics_tracker: &mut LeaderSlotMetricsTracker,
     ) -> Result<(), RecvTimeoutError> {
+        // YZM: 这里push了交易，self.buffer_packets line52
         let (result, recv_time_us) = measure_us!({
             let recv_timeout = Self::get_receive_timeout(unprocessed_transaction_storage);
             let mut recv_and_buffer_measure = Measure::start("recv_and_buffer");
@@ -105,6 +106,7 @@ impl PacketReceiver {
         let mut dropped_packets_count = 0;
         let mut newly_buffered_packets_count = 0;
         let mut newly_buffered_forwarded_packets_count = 0;
+        // YZM: 这里把解码后的交易放到了unprocessed_transaction_storage里，这个storage是vote_storage
         Self::push_unprocessed(
             unprocessed_transaction_storage,
             deserialized_packets,

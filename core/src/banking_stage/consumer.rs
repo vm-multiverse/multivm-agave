@@ -115,6 +115,7 @@ impl Consumer {
         banking_stage_stats: &BankingStageStats,
         slot_metrics_tracker: &mut LeaderSlotMetricsTracker,
     ) {
+        // WJY: 这里处理正常交易
         let mut rebuffered_packet_count = 0;
         let mut consumed_buffered_packets_count = 0;
         let mut proc_start = Measure::start("consume_buffered_process");
@@ -125,6 +126,7 @@ impl Consumer {
             banking_stage_stats,
             slot_metrics_tracker,
             |packets_to_process, payload| {
+                // WJY: 正常交易 1
                 self.do_process_packets(
                     bank_start,
                     payload,
@@ -177,6 +179,7 @@ impl Consumer {
         }
 
         let packets_to_process_len = packets_to_process.len();
+        // WJY: 正常交易 2
         let (process_transactions_summary, process_packets_transactions_us) = measure_us!(self
             .process_packets_transactions(
                 &bank_start.working_bank,
@@ -232,6 +235,7 @@ impl Consumer {
         banking_stage_stats: &BankingStageStats,
         slot_metrics_tracker: &mut LeaderSlotMetricsTracker,
     ) -> ProcessTransactionsSummary {
+        // WJY: 正常交易 3
         let (mut process_transactions_summary, process_transactions_us) = measure_us!(
             self.process_transactions(bank, bank_creation_time, sanitized_transactions)
         );
@@ -300,7 +304,8 @@ impl Consumer {
             let chunk_end = std::cmp::min(
                 transactions.len(),
                 chunk_start + TARGET_NUM_TRANSACTIONS_PER_BATCH,
-            );
+            ); 
+            // WJY: 正常交易 4
             let process_transaction_batch_output = self.process_and_record_transactions(
                 bank,
                 &transactions[chunk_start..chunk_end],
@@ -411,6 +416,7 @@ impl Consumer {
                 Err(err) => Err(err),
             })
             .collect();
+        // WJY: 正常交易 5
         let mut output = self.process_and_record_transactions_with_pre_results(
             bank,
             txs,
@@ -500,6 +506,7 @@ impl Consumer {
         // retryable_txs includes AccountInUse, WouldExceedMaxBlockCostLimit
         // WouldExceedMaxAccountCostLimit, WouldExceedMaxVoteCostLimit
         // and WouldExceedMaxAccountDataCostLimit
+        // WJY: 正常交易 6
         let mut execute_and_commit_transactions_output =
             self.execute_and_commit_transactions_locked(bank, &batch);
 
@@ -555,6 +562,7 @@ impl Consumer {
         bank: &Arc<Bank>,
         batch: &TransactionBatch<impl TransactionWithMeta>,
     ) -> ExecuteAndCommitTransactionsOutput {
+        // WJY: 正常交易 7
         let transaction_status_sender_enabled = self.committer.transaction_status_sender_enabled();
         let mut execute_and_commit_timings = LeaderExecuteAndCommitTimings::default();
 
@@ -668,11 +676,26 @@ impl Consumer {
 
         let (freeze_lock, freeze_lock_us) = measure_us!(bank.freeze_lock());
         execute_and_commit_timings.freeze_lock_us = freeze_lock_us;
+        
+        // WJY: 正常交易 8 记录到 poh 中
+        let thread_id = std::thread::current().id();
+        let slot = bank.slot();
+        let transactions = batch.sanitized_transactions();
+        let is_vote = if !transactions.is_empty() {
+            transactions[0].is_simple_vote_transaction()
+        } else {
+            false
+        };
+        // println!("WJY START - Thread: {:?}, Slot: {}, IsVote: {}", thread_id, slot, is_vote);
 
         let (record_transactions_summary, record_us) = measure_us!(self
             .transaction_recorder
-            .record_transactions(bank.slot(), processed_transactions));
+            .record_transactions(bank.slot(), processed_transactions, is_vote));
         execute_and_commit_timings.record_us = record_us;
+        
+        // WJY: 打印结束信息
+        // println!("WJY END - Thread: {:?}, Slot: {}, IsVote: {}", thread_id, slot, is_vote);
+        // println!();
 
         let RecordTransactionsSummary {
             result: record_transactions_result,

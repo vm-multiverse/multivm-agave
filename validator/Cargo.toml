@@ -69,6 +69,7 @@ solana-quic-client = { workspace = true }
 solana-connection-cache = { workspace = true }
 solana-client = { workspace = true }
 solana-transaction-error = { workspace = true }
+solana-transaction-status-client-types = {workspace = true}
 symlink = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }

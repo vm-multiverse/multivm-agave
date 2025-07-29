@@ -12,6 +12,8 @@
 //!
 #[cfg(feature = "dev-context-only-utils")]
 use solana_ledger::genesis_utils::{create_genesis_config, GenesisConfigInfo};
+use crate::ipc::IpcClient;
+
 use {
     crate::{leader_bank_notifier::LeaderBankNotifier, poh_service::PohService},
     crossbeam_channel::{
@@ -40,6 +42,7 @@ use {
         },
         time::{Duration, Instant},
     },
+    lazy_static::lazy_static,
     thiserror::Error,
 };
 
@@ -135,6 +138,37 @@ pub struct RecordTransactionsSummary {
     pub starting_transaction_index: Option<usize>,
 }
 
+struct TransactionTicker {
+    pub tick_height: u128,
+    pub tick_slot: u128,
+}
+
+impl TransactionTicker {
+    pub fn new() -> Self {
+        TransactionTicker {
+            tick_height: 0,
+            tick_slot: 1,
+        }
+    }
+
+    pub fn tick(&mut self) {
+        self.tick_height += 1;
+        if self.tick_height % 2 == 0 {
+            self.tick_slot += 1;
+        }
+    }
+
+    pub fn get_info(&self) -> (u128, u128) {
+        (self.tick_height, self.tick_slot)
+    }
+}
+
+// 全局的 TransactionTicker 变量，用于并发访问
+lazy_static! {
+    static ref GLOBAL_TRANSACTION_TICKER: Arc<Mutex<TransactionTicker>> =
+        Arc::new(Mutex::new(TransactionTicker::new()));
+}
+
 #[derive(Clone, Debug)]
 pub struct TransactionRecorder {
     // shared by all users of PohRecorder
@@ -156,6 +190,7 @@ impl TransactionRecorder {
         &self,
         bank_slot: Slot,
         transactions: Vec<VersionedTransaction>,
+        is_vote: bool,
     ) -> RecordTransactionsSummary {
         let mut record_transactions_timings = RecordTransactionsTimings::default();
         let mut starting_transaction_index = None;
@@ -164,7 +199,7 @@ impl TransactionRecorder {
             let (hash, hash_us) = measure_us!(hash_transactions(&transactions));
             record_transactions_timings.hash_us = Saturating(hash_us);
 
-            let (res, poh_record_us) = measure_us!(self.record(bank_slot, hash, transactions));
+            let (res, poh_record_us) = measure_us!(self.record(bank_slot, hash, transactions, is_vote));
             record_transactions_timings.poh_record_us = Saturating(poh_record_us);
 
             match res {
@@ -202,9 +237,12 @@ impl TransactionRecorder {
         bank_slot: Slot,
         mixin: Hash,
         transactions: Vec<VersionedTransaction>,
+        is_vote: bool,
     ) -> Result<Option<usize>> {
         // create a new channel so that there is only 1 sender and when it goes out of scope, the receiver fails
         let (result_sender, result_receiver) = bounded(1);
+        // WJY: 正常交易 9 发送信息给 record（最重要的）
+        
         let res =
             self.record_sender
                 .send(Record::new(mixin, transactions, bank_slot, result_sender));
@@ -213,9 +251,31 @@ impl TransactionRecorder {
             //  the max tick height to stop transaction processing and flush any transactions in the pipeline.
             return Err(PohRecorderError::MaxHeightReached);
         }
+
+        // 获取全局 TransactionTicker 的信息
+        let (mut tick_height, mut tick_slot) = (0, 0);
+        if let Ok(ticker) = GLOBAL_TRANSACTION_TICKER.lock() {
+            (tick_height, tick_slot) = ticker.get_info();
+            // println!("TransactionTicker Info - tick_height: {}, tick_slot: {}", tick_height, tick_slot);
+        }
+        if bank_slot % 2 == 0 && !is_vote{
+            let client = IpcClient::new("/tmp/solana-private-validator".to_string());
+            let _result = client.tick();
+        }
+        // else {
+        //     if is_vote {
+        //         // let client = IpcClient::new("/tmp/solana-private-validator".to_string());
+        //         // let _ = client.tick();
+        //         println!("奇数， 投票");
+        //     } else {
+        //         println!("奇数，交易");
+        //     }
+        // }
+
         // Besides validator exit, this timeout should primarily be seen to affect test execution environments where the various pieces can be shutdown abruptly
         let mut is_exited = false;
         loop {
+            // WJY: 正常交易 10 如果消息被 tick 记录，那么这里会收到正确的 Result
             let res = result_receiver.recv_timeout(Duration::from_millis(1000));
             match res {
                 Err(RecvTimeoutError::Timeout) => {
@@ -864,6 +924,11 @@ impl PohRecorder {
     }
 
     pub fn tick(&mut self) {
+        // WJY: 手动进行自己的 tick
+        if let Ok(mut ticker) = GLOBAL_TRANSACTION_TICKER.lock() {
+            ticker.tick();
+        }
+
         let ((poh_entry, target_time), tick_lock_contention_us) = measure_us!({
             let mut poh_l = self.poh.lock().unwrap();
             let poh_entry = poh_l.tick();

@@ -433,6 +433,7 @@ dependencies = [
  "solana-test-validator",
  "solana-tpu-client",
  "solana-transaction-error",
+ "solana-transaction-status-client-types",
  "solana-unified-scheduler-pool",
  "solana-version",
  "solana-vote-program",
@@ -8614,8 +8615,10 @@ dependencies = [
  "bincode",
  "core_affinity",
  "crossbeam-channel",
+ "lazy_static",
  "log",
  "rand 0.8.5",
+ "serde",
  "solana-clock",
  "solana-entry",
  "solana-hash",
@@ -8634,6 +8637,7 @@ dependencies = [
  "solana-system-transaction",
  "solana-time-utils",
  "solana-transaction",
+ "tempfile",
  "thiserror 2.0.12",
 ]
 

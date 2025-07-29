@@ -451,6 +451,7 @@ impl VoteStorage {
         &mut self,
         deserialized_packets: Vec<ImmutableDeserializedPacket>,
     ) -> VoteBatchInsertionMetrics {
+        let batch_size = deserialized_packets.len();
         self.latest_unprocessed_votes.insert_batch(
             deserialized_packets
                 .into_iter()
@@ -461,7 +462,7 @@ impl VoteStorage {
                         self.latest_unprocessed_votes
                             .should_deprecate_legacy_vote_ixs(),
                     )
-                    .ok()
+                        .ok()
                 }),
             false, // should_replenish_taken_votes
         )
