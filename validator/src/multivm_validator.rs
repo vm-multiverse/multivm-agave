@@ -566,7 +566,7 @@ pub fn run_multivm_validator() {
             /* enable_warmup_epochs = */ false,
         ));
 
-        //   genesis.rent = Rent::with_slots_per_epoch(slots_per_epoch);
+        genesis.rent = Rent::with_slots_per_epoch(slots_per_epoch);
     }
 
     if let Some(gossip_host) = gossip_host {
@@ -599,8 +599,8 @@ pub fn run_multivm_validator() {
     }
 
     // free
-    genesis.fee_rate_governor(FeeRateGovernor::new(0, 0));
-    genesis.rent(Rent::free());
+    // genesis.fee_rate_governor(FeeRateGovernor::new(0, 0));
+    // genesis.rent(Rent::free());
 
     // Set deterministic mode if requested
     if deterministic {
