@@ -597,6 +597,7 @@ impl<FG: ForkGraph> TransactionBatchProcessor<FG> {
         let fee_details = if lamports_per_signature == 0 {
             FeeDetails::default()
         } else {
+            // YZM: 这个似乎可以算fee
             callbacks.calculate_fee(
                 message,
                 fee_lamports_per_signature,

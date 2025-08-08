@@ -12,6 +12,7 @@ pub enum RpcRequest {
     Custom { method: &'static str },
     DeregisterNode,
     GetAccountInfo,
+    DistributeRewardToAccount, // add by zhmye
     GetBalance,
     GetBlock,
     GetBlockHeight,
@@ -79,6 +80,7 @@ impl fmt::Display for RpcRequest {
             RpcRequest::GetAccountInfo => "getAccountInfo",
             RpcRequest::GetBalance => "getBalance",
             RpcRequest::GetBlock => "getBlock",
+            RpcRequest::DistributeRewardToAccount => "distributeRewardToAccount", // add by zhmye
             RpcRequest::GetBlockHeight => "getBlockHeight",
             RpcRequest::GetBlockProduction => "getBlockProduction",
             RpcRequest::GetBlocks => "getBlocks",

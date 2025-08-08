@@ -316,7 +316,7 @@ pub fn validate_fee_payer(
                 .minimum_balance(NonceState::size())
         }
     };
-
+    // YZM: 这里在看有没有足够的钱，fee和rent
     payer_account
         .lamports()
         .checked_sub(min_balance)

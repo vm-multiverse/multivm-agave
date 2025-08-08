@@ -47,11 +47,12 @@ impl Bank {
     pub(super) fn distribute_transaction_fees(&self) {
         let collector_fees = self.collector_fees.load(Relaxed);
         if collector_fees != 0 {
-            let (deposit, mut burn) = self.calculate_reward_and_burn_fees(collector_fees);
-            if deposit > 0 {
-                self.deposit_or_burn_fee(deposit, &mut burn);
-            }
-            self.capitalization.fetch_sub(burn, Relaxed);
+            // YZM: 这里发钱，不知道那个burn是啥，注释了都
+            // let (deposit, mut burn) = self.calculate_reward_and_burn_fees(collector_fees);
+            // if deposit > 0 {
+            //     self.deposit_or_burn_fee(deposit, &mut burn);
+            // }
+            // self.capitalization.fetch_sub(burn, Relaxed);
         }
     }
 
@@ -63,13 +64,12 @@ impl Bank {
             // nothing to distribute, exit early
             return;
         }
-
-        let (deposit, mut burn) = self.calculate_reward_and_burn_fee_details(&fee_details);
-
-        if deposit > 0 {
-            self.deposit_or_burn_fee(deposit, &mut burn);
-        }
-        self.capitalization.fetch_sub(burn, Relaxed);
+        // YZM: 应该是这里发钱，反正直接注释了
+        // let (deposit, mut burn) = self.calculate_reward_and_burn_fee_details(&fee_details);
+        // if deposit > 0 {
+        //     self.deposit_or_burn_fee(deposit, &mut burn);
+        // }
+        // self.capitalization.fetch_sub(burn, Relaxed);
     }
 
     pub fn calculate_reward_for_transaction(
