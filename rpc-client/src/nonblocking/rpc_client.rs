@@ -6,6 +6,7 @@
 //!
 //! [JSON-RPC]: https://www.jsonrpc.org/specification
 
+use solana_account::AccountSharedData;
 pub use crate::mock_sender::Mocks;
 #[cfg(feature = "spinner")]
 use {crate::spinner, solana_clock::MAX_HASH_AGE_IN_SECONDS, std::cmp::min};
@@ -4094,7 +4095,64 @@ impl RpcClient {
             .await?
             .value)
     }
+    pub async fn distribute_reward_to_account(&self, pubkey: &Pubkey, amount: u64) -> ClientResult<Option<AccountSharedData>> {
+        let config = RpcAccountInfoConfig{
+            encoding: Some(UiAccountEncoding::JsonParsed),
+            commitment: None,
+            data_slice: None,
+            min_context_slot: None,
+        };
+        let response = self.send(
+            RpcRequest::DistributeRewardToAccount,
+            json!([pubkey.to_string(), amount]),
+        ).await;
+        let result = response
+            .map(|result_json: Value| {
+                if result_json.is_null() {
+                    return Err(
+                        RpcError::ForUser(format!("Distribute reward to pubkey {pubkey} error")),
+                    );
+                }
+                let Response {
+                    context,
+                    value: rpc_account,
+                } = serde_json::from_value::<Response<Option<AccountSharedData>>>(result_json).unwrap();
+                let response = {
+                    if let Some(account_data) = rpc_account {
+                        return Ok(
+                            Response {
+                                context,
+                                value: Some(account_data),
+                            }
+                        )
+                        // if let UiAccountData::Binary(account_data, ..) = rpc_account.clone().data {
+                        //     let token_account_type: TokenAccountType =
+                        //         serde_json::from_value(account_data.clone().parsed).unwrap();
+                        //     println!("token_account_type {:?}", token_account_type);
+                        //     println!("account_data: {:?}", account_data);
+                        //     println!("rpc_account: {:?}", rpc_account);
+                        //     if let TokenAccountType::Account(token_account) = token_account_type {
+                        //         return Ok(Response {
+                        //             context,
+                        //             value: Some(token_account),
+                        //         });
+                        //     }
+                        // }
+                    }
+                    Err(Into::<ClientError>::into(RpcError::ForUser(format!(
+                        "Response parse error, pubkey={pubkey}"
+                    ))))
+                };
+                response.unwrap()
+            })
+            .map_err(|err| {
+                Into::<ClientError>::into(RpcError::ForUser(format!(
+                    "Distribute reward to pubkey {pubkey} error: {err}"
+                )))
+            })?;
 
+        Ok(result?.value)
+    }
     pub async fn get_token_account_with_commitment(
         &self,
         pubkey: &Pubkey,
@@ -4624,7 +4682,6 @@ impl RpcClient {
         T: serde::de::DeserializeOwned,
     {
         assert!(params.is_array() || params.is_null());
-
         let response = self
             .sender
             .send(request, params)

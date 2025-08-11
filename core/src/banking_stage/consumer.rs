@@ -790,6 +790,7 @@ impl Consumer {
                 .compute_budget_instruction_details()
                 .sanitize_and_convert_to_compute_budget_limits(&bank.feature_set)?,
         );
+        // YZM: 这个也可以算fee,而且不需要结构体？
         let fee = solana_fee::calculate_fee(
             transaction,
             bank.get_lamports_per_signature() == 0,

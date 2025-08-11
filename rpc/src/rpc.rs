@@ -1,4 +1,6 @@
 //! The `rpc` module implements the Solana RPC interface.
+
+use solana_sdk::account::WritableAccount;
 #[cfg(feature = "dev-context-only-utils")]
 use solana_runtime::installed_scheduler_pool::BankWithScheduler;
 use {
@@ -553,7 +555,48 @@ impl JsonRpcRequestProcessor {
             .expect("rpc: get_encoded_account panicked")?;
         Ok(new_response(&bank, response))
     }
+    // add by zhmye todo 这里先按照上面写成返回一个account，不然我也不知道返回啥
+    pub async fn distribute_reward_to_account(
+        &self,
+        recipient: Pubkey,
+        amount: u64,
+    ) -> Result<RpcResponse<Option<AccountSharedData>>> {
+        let RpcAccountInfoConfig {
+            encoding,
+            data_slice,
+            commitment,
+            min_context_slot,
+        } = RpcAccountInfoConfig::default();
+        let bank = self.bank_forks.read().unwrap().working_bank();
+        let mut account_data = bank
+            .get_account(&recipient)
+            .unwrap_or_else(|| {
+                // 如果账户不存在，需要提前创建？ todo
+                // 这里先不要求
+                AccountSharedData::new(0, 0, &solana_sdk::system_program::id())
+            });
+        // 增加账户余额
+        let new_balance = account_data.lamports()
+            .checked_add(amount)
+            .ok_or("Balance overflow").unwrap_or(0);
 
+        account_data.set_lamports(new_balance);
+
+        // 使用Bank的store_account函数
+        bank.store_account(&recipient, &account_data);
+        // 然后我们再读一次，用于返回？
+        let response = bank.get_account(&recipient);
+        // let response = self
+        //     .runtime
+        //     .spawn_blocking({
+        //         let bank = Arc::clone(&bank);
+        //         move || get_encoded_account(&bank, &recipient, encoding, data_slice, None)
+        //     })
+        //     .await
+        //     .expect("rpc: get_encoded_account panicked")?;
+
+        Ok(new_response(&bank, response))
+    }
     pub async fn get_multiple_accounts(
         &self,
         pubkeys: Vec<Pubkey>,
@@ -3188,6 +3231,15 @@ pub mod rpc_accounts {
             pubkey_str: String,
             config: Option<RpcAccountInfoConfig>,
         ) -> BoxFuture<Result<RpcResponse<Option<UiAccount>>>>;
+        // add by zhmye
+        #[rpc(meta, name = "distributeRewardToAccount")]
+        fn distribute_reward_to_account(
+            &self,
+            meta: Self::Metadata,
+            pubkey_str: String,
+            amount: u64,
+        ) -> BoxFuture<Result<RpcResponse<Option<AccountSharedData>>>>;
+
 
         #[rpc(meta, name = "getMultipleAccounts")]
         fn get_multiple_accounts(
@@ -3242,7 +3294,19 @@ pub mod rpc_accounts {
             }
             .boxed()
         }
-
+        // add by zhmye
+        fn distribute_reward_to_account(
+            &self,
+            meta: Self::Metadata,
+            pubkey_str: String,
+            amount: u64,
+        ) -> BoxFuture<Result<RpcResponse<Option<AccountSharedData>>>> {
+            debug!("distribute_reward_to_account rpc request received: {:?}", pubkey_str);
+            async move {
+                let pubkey = verify_pubkey(&pubkey_str)?;
+                meta.distribute_reward_to_account(pubkey, amount).await
+            }.boxed()
+        }
         fn get_multiple_accounts(
             &self,
             meta: Self::Metadata,

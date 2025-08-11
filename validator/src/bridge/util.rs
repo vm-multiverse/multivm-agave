@@ -1,3 +1,6 @@
+use log::info;
+use solana_sdk::account::AccountSharedData;
+use solana_sdk::pubkey::Pubkey;
 use {
     crate::bridge::ipc::IpcClient,
     log::{debug, error, warn},
@@ -12,6 +15,7 @@ use {
     solana_transaction_status_client_types::UiConfirmedBlock,
     std::time::Duration,
 };
+use solana_rpc_client_api::config::RpcAccountInfoConfig;
 
 /// 使用默认重试设置发送并确认交易
 ///
@@ -106,10 +110,7 @@ pub fn send_and_confirm_transaction_with_config(
             format!("Transaction send failed: {}", e),
         )) as Box<dyn std::error::Error + Send + Sync>
     })?;
-
-
     debug!("Transaction sent with signature: {}", signature);
-
     // Step 2: Poll until commitment level is processed
     for attempt in 1..=max_retries {
         debug!(
@@ -285,9 +286,35 @@ pub fn get_slot(rpc_client: &RpcClient) -> Result<u64, Box<dyn std::error::Error
         })
 }
 
+// 创建一个bank内的账户，不清楚会不会用到
+// 考虑到发奖励的时候没有account咋办，逻辑上应该要先创建，在distribute里也加了这个判断
+// pub fn create_bank_account()
+
+pub fn distribute_reward_to_account(rpc_client: &RpcClient, ipc_client: &IpcClient, recipient: &Pubkey, amount: u64) -> Result<Option<AccountSharedData>, Box<dyn std::error::Error + Send + Sync>> {
+    // 发送RPC请求
+    ipc_client.tick()?;
+    ipc_client.tick()?;
+    let response = rpc_client.distribute_reward_to_account(recipient, amount)
+        .map_err(|e| {
+            error!("Failed to send distribute reward RPC: {}", e);
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("RPC call failed: {}", e),
+            )) as Box<dyn std::error::Error + Send + Sync>
+        })?;
+    info!("Successfully distributed reward to {}", recipient);
+    ipc_client.tick()?;
+    ipc_client.tick()?;
+    Ok(response) // todo 这里现在是返回AccountShareData
+}
+
 #[cfg(test)]
 mod tests {
+    use solana_sdk::hash::hash;
+    use solana_sdk::signature::{Keypair, Signer};
+    use solana_sdk::system_instruction;
     use {super::*, crate::bridge::genesis, solana_client::rpc_client::RpcClient};
+    use crate::bridge::genesis::keypair_from_seed;
 
     /// 测试获取创世哈希功能
     ///
@@ -344,13 +371,98 @@ mod tests {
     /// 3. 验证区块哈希是否每次执行都一致
     ///
     /// ### 注意事项
-    /// 本地需要手动运行Solana验证器
-    #[test]
-    fn test_slot_hash_consistency() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    /// 本地需要手动运行Solana验证器 之前忘记push了这个
+    #[test]fn test_slot_hash_consistency() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let rpc_url = "http://127.0.0.1:8899";
         let rpc_client = RpcClient::new(rpc_url.to_string());
         let faucet_keypair = genesis::faucet_keypair();
+        let ipc_client = IpcClient::new("/tmp/solana-private-validator".to_string());
         // TODO
+        let nb_transaction = 1000;
+        let random_seed = "yzm_test_seed_str";
+        let transactions = (0..nb_transaction).into_iter().map(|x| {
+            let unique_input = format!("{}-{}", random_seed, x);
+
+            // 2. 对这个唯一输入进行哈希，得到一个 32 字节的哈希值
+            //    solana_sdk::hash::hash 返回一个 `Hash` 类型
+            let account_seed_hash = hash(unique_input.as_bytes());
+
+            // 3. 将 `Hash` 类型转换为一个 [u8; 32] 字节数组
+            let account_seed_bytes = account_seed_hash.to_bytes();
+            let account = keypair_from_seed(&account_seed_bytes);
+            let transfer_amount = 1_000_000_000;
+            let transfer_instruction =
+                system_instruction::transfer(&faucet_keypair.pubkey(), &account.pubkey(), transfer_amount);
+
+            let recent_blockhash = match rpc_client.get_latest_blockhash() {
+                Ok(blockhash) => blockhash,
+                Err(e) => {
+                    panic!("Failed to get latest blockhash: {}", e);
+                }
+            };
+
+            // 创建交易
+            let mut transaction =
+                Transaction::new_with_payer(&[transfer_instruction], Some(&faucet_keypair.pubkey()));
+
+            // 签名交易
+            transaction.sign(&[&faucet_keypair], recent_blockhash);
+            transaction
+        }).collect::<Vec<_>>();
+        for tx in transactions.iter() {
+            let send_result = send_and_confirm_transaction(&ipc_client, &rpc_client, tx);
+            match send_result {
+                Ok(signature) => {
+                    match rpc_client.get_signature_status_with_commitment(
+                        &signature,
+                        CommitmentConfig {
+                            commitment: CommitmentLevel::Processed,
+                        },
+                    ) {
+                        Ok(Some(Ok(_))) => {
+
+                        }
+                        Ok(Some(Err(e))) => {
+                            panic!("Transaction was eventually rejected, error: {}", e);
+                        }
+                        Ok(None) => {
+                            panic!("Transaction was not processed");
+                        }
+                        Err(e) => {
+                            panic!("Error checking transaction status: {}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    // This is the expected result - transaction should be rejected at send time
+                    panic!("{}", format!("Transaction with expired blockhash was correctly rejected,Rejection reason: {}", e));
+                }
+            }
+        }
+        let nb_slot = get_slot(&rpc_client).unwrap();
+        println!("{}", nb_slot);
+        let block = get_block(&rpc_client, nb_slot).unwrap();
+        println!("{}", block.blockhash);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_distribute_reward() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let rpc_url = "http://127.0.0.1:8899";
+        let rpc_client =RpcClient::new_with_commitment(rpc_url.to_string(), CommitmentConfig::processed());
+        let client = IpcClient::new("/tmp/solana-private-validator".to_string());
+        let recipient = Keypair::new().pubkey();
+        let amount = 1000;
+        let account_data = distribute_reward_to_account(&rpc_client, &client, &recipient, amount)?;
+        if let Some(account_in_response) = account_data {
+            println!("{:#?}", account_in_response);
+        } else {
+            panic!("Failed to distribute reward to account");
+        }
+        // 如果成功了，再查一下余额
+        let account = rpc_client.get_account(&recipient).unwrap();
+        assert_eq!(account.lamports, amount);
         Ok(())
     }
 }

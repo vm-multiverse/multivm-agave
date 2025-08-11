@@ -9,6 +9,7 @@
 //! This is a blocking API. For a non-blocking API use the asynchronous client
 //! in [`crate::nonblocking::rpc_client`].
 
+use solana_account::AccountSharedData;
 pub use crate::mock_sender::Mocks;
 use {
     crate::{
@@ -3400,6 +3401,10 @@ impl RpcClient {
 
     pub fn get_genesis_hash(&self) -> ClientResult<Hash> {
         self.invoke((self.rpc_client.as_ref()).get_genesis_hash())
+    }
+    // add by zhmye
+    pub fn distribute_reward_to_account(&self, pubkey: &Pubkey, amount: u64) -> ClientResult<Option<AccountSharedData>> {
+        self.invoke((self.rpc_client.as_ref()).distribute_reward_to_account(pubkey, amount))
     }
 
     pub fn get_health(&self) -> ClientResult<()> {

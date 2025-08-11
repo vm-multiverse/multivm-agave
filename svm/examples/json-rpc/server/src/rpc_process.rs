@@ -766,7 +766,17 @@ pub mod rpc {
             debug!("pubkey {pubkey:?} verified.");
             meta.get_account_info(&pubkey, config)
         }
+        fn distribute_reward_to_account(
+            &self,
+            meta: Self::Metadata,
+            pubkey_str: String,
+            amount: u64) -> Result<RpcResponse<Option<UiAccount>>> {
+            debug!("distribute_reward_to_account rpc request received: {:?}", pubkey_str);
+            let pubkey = verify_pubkey(&pubkey_str)?;
+            debug!("pubkey {pubkey:?} verified.");
+            meta.distribute_reward_to_account(&pubkey, amount)
 
+        }
         fn get_latest_blockhash(
             &self,
             meta: Self::Metadata,
