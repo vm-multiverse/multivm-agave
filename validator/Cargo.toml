@@ -58,6 +58,7 @@ solana-rpc-client-api = { workspace = true }
 solana-runtime = { workspace = true }
 solana-sdk = { version = "=2.2.2", features = ["openssl-vendored"] }
 solana-send-transaction-service = { workspace = true }
+solana-system-interface = "=1.0"
 solana-storage-bigtable = { workspace = true }
 solana-streamer = { workspace = true }
 solana-test-validator = { workspace = true }
@@ -94,9 +95,6 @@ signal-hook = { workspace = true }
 name = "bridge_example"
 path = "examples/bridge_example.rs"
 
-[[example]]
-name = "ipc_example"
-path = "examples/ipc_example.rs"
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]

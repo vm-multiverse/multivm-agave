@@ -9,13 +9,15 @@ use {
     solana_sdk::{
         commitment_config::{CommitmentConfig, CommitmentLevel},
         hash::Hash,
-        signature::Signature,
+        signature::{Keypair, Signature, Signer},
+        system_instruction,
         transaction::Transaction,
+        system_program,
     },
+    solana_system_interface::instruction::SystemInstruction,
     solana_transaction_status_client_types::UiConfirmedBlock,
     std::time::Duration,
 };
-use solana_rpc_client_api::config::RpcAccountInfoConfig;
 
 /// 使用默认重试设置发送并确认交易
 ///
@@ -308,6 +310,219 @@ pub fn distribute_reward_to_account(rpc_client: &RpcClient, ipc_client: &IpcClie
     Ok(response) // todo 这里现在是返回AccountShareData
 }
 
+/// 解析转账交易信息（支持 EVM 地址 memo）
+///
+/// 此函数检查给定的交易是否是SOL转账交易，如果是，则提取发送方、接收方、转账金额和可能的EVM地址。
+/// 支持的交易模式：
+/// - 包含转账指令和memo指令的转账（memo中包含EVM地址）
+///
+/// ### 实现说明
+/// 本函数使用 `bincode::deserialize` 来安全地解析系统指令，而不是硬编码指令类型数字。
+/// 这种方法更加安全和可靠，因为它：
+/// - 不依赖于枚举变体的内部数字表示
+/// - 能够正确处理未来可能的 SystemInstruction 枚举变化
+/// - 使用 Solana 官方的序列化格式进行验证
+///
+/// ### 参数
+/// - `transaction`: 要解析的交易对象
+///
+/// ### 返回值
+/// - `Ok(Some((from, to, amount, evm_address)))`: 成功解析转账交易，返回发送方、接收方、转账金额和EVM地址
+/// - `Ok(None)`: 交易不是符合条件的转账交易
+/// - `Err(Box<dyn std::error::Error + Send + Sync>)`: 解析过程中发生错误
+///
+/// ### 示例
+/// ```rust
+/// if let Ok(Some((from, to, amount, evm_address))) = parse_transfer_transaction(&transaction) {
+///     println!("转账: {} -> {}, 金额: {} lamports", from, to, amount);
+///     println!("EVM地址: {}", evm_address);
+/// }
+/// ```
+pub fn parse_transfer_transaction(
+    transaction: &Transaction,
+) -> Result<Option<(Pubkey, Pubkey, u64, String)>, Box<dyn std::error::Error + Send + Sync>> {
+    let instructions = &transaction.message.instructions;
+    let account_keys = &transaction.message.account_keys;
+
+    // 必须恰好包含2个指令：转账指令 + memo指令
+    if instructions.len() != 2 {
+        return Ok(None);
+    }
+
+    // 第一个指令必须是转账指令
+    let transfer_instruction = &instructions[0];
+    let memo_instruction = &instructions[1];
+
+    // 验证指令索引
+    if transfer_instruction.program_id_index as usize >= account_keys.len() ||
+       memo_instruction.program_id_index as usize >= account_keys.len() {
+        return Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "Invalid program_id_index in instruction",
+        )));
+    }
+
+    let transfer_program_id = &account_keys[transfer_instruction.program_id_index as usize];
+    let memo_program_id = &account_keys[memo_instruction.program_id_index as usize];
+
+    // 验证第一个指令是系统程序的转账指令
+    if *transfer_program_id != system_program::id() {
+        return Ok(None);
+    }
+
+    // 验证第二个指令是memo程序指令
+    if memo_program_id.to_string() != "11111111111111111111111111111112" {
+        return Ok(None);
+    }
+
+    // 解析转账指令
+    let lamports = match bincode::deserialize::<SystemInstruction>(&transfer_instruction.data) {
+        Ok(SystemInstruction::Transfer { lamports }) => lamports,
+        _ => return Ok(None), // 不是转账指令
+    };
+
+    // 验证转账指令的账户索引
+    if transfer_instruction.accounts.len() != 2 {
+        return Ok(None);
+    }
+
+    let from_index = transfer_instruction.accounts[0] as usize;
+    let to_index = transfer_instruction.accounts[1] as usize;
+
+    if from_index >= account_keys.len() || to_index >= account_keys.len() {
+        return Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "Invalid account index in transfer instruction",
+        )));
+    }
+
+    let from = account_keys[from_index];
+    let to = account_keys[to_index];
+
+    // 从memo指令中提取EVM地址
+    let evm_address = match extract_evm_address_from_memo(&memo_instruction.data)? {
+        Some(addr) => addr,
+        None => return Ok(None), // memo中没有有效的EVM地址
+    };
+
+    Ok(Some((from, to, lamports, evm_address)))
+}
+
+/// 从memo数据中提取EVM地址
+///
+/// ### 参数
+/// - `memo_data`: memo指令的数据部分
+///
+/// ### 返回值
+/// - `Ok(Some(String))`: 成功提取到EVM地址
+/// - `Ok(None)`: memo中没有有效的EVM地址
+/// - `Err(...)`: 解析过程中发生错误
+fn extract_evm_address_from_memo(memo_data: &[u8]) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync>> {
+    // 将memo数据转换为UTF-8字符串
+    let memo_text = match std::str::from_utf8(memo_data) {
+        Ok(text) => text.trim(),
+        Err(_) => return Ok(None), // 不是有效的UTF-8，跳过
+    };
+
+    // 检查是否是有效的EVM地址格式（0x开头的40个十六进制字符）
+    if memo_text.len() == 42 && memo_text.starts_with("0x") {
+        let hex_part = &memo_text[2..];
+        // 验证是否都是十六进制字符
+        if hex_part.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Ok(Some(memo_text.to_string()));
+        }
+    }
+
+    // 也支持不带0x前缀的40个十六进制字符
+    if memo_text.len() == 40 && memo_text.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Ok(Some(format!("0x{}", memo_text)));
+    }
+
+    Ok(None)
+}
+
+/// 创建包含转账和EVM地址memo的交易
+///
+/// 此函数用于构建一个包含转账指令和memo指令的交易，memo中包含指定的EVM地址。
+/// 这种交易格式专门用于跨链桥接场景。
+///
+/// ### 参数
+/// - `from`: 发送方的密钥对，用于签名交易
+/// - `to`: 接收方的公钥
+/// - `amount`: 转账金额（lamports）
+/// - `evm_address`: 目标EVM地址（支持带或不带0x前缀）
+/// - `recent_blockhash`: 最新的区块哈希，用于交易签名
+///
+/// ### 返回值
+/// - `Ok(Transaction)`: 成功创建的已签名交易
+/// - `Err(Box<dyn std::error::Error + Send + Sync>)`: 创建过程中发生错误
+///
+/// ### 示例
+/// ```rust
+/// let from_keypair = Keypair::new();
+/// let to_pubkey = Keypair::new().pubkey();
+/// let amount = 1_000_000_000; // 1 SOL
+/// let evm_address = "0x742d35Cc6634C0532925a3b8D4C2C4e0C8b83265";
+/// let recent_blockhash = rpc_client.get_latest_blockhash()?;
+///
+/// let transaction = create_transfer_with_evm_memo(
+///     &from_keypair,
+///     &to_pubkey,
+///     amount,
+///     evm_address,
+///     recent_blockhash,
+/// )?;
+/// ```
+pub fn create_transfer_with_evm_memo(
+    from: &Keypair,
+    to: &Pubkey,
+    amount: u64,
+    evm_address: &str,
+    recent_blockhash: Hash,
+) -> Result<Transaction, Box<dyn std::error::Error + Send + Sync>> {
+    use solana_sdk::instruction::Instruction;
+    
+    // 标准化EVM地址格式（确保有0x前缀）
+    let normalized_evm_address = if evm_address.starts_with("0x") {
+        evm_address.to_string()
+    } else if evm_address.len() == 40 && evm_address.chars().all(|c| c.is_ascii_hexdigit()) {
+        format!("0x{}", evm_address)
+    } else {
+        return Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("Invalid EVM address format: {}", evm_address),
+        )));
+    };
+
+    // 创建转账指令
+    let transfer_instruction = system_instruction::transfer(
+        &from.pubkey(),
+        to,
+        amount,
+    );
+
+    // 创建memo指令（包含EVM地址）
+    let memo_program_id = Pubkey::try_from("11111111111111111111111111111112")
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+    
+    let memo_instruction = Instruction::new_with_bytes(
+        memo_program_id,
+        normalized_evm_address.as_bytes(),
+        vec![], // memo指令不需要账户
+    );
+
+    // 创建包含转账和memo的交易
+    let mut transaction = Transaction::new_with_payer(
+        &[transfer_instruction, memo_instruction],
+        Some(&from.pubkey()),
+    );
+
+    // 签名交易
+    transaction.sign(&[from], recent_blockhash);
+
+    Ok(transaction)
+}
+
 #[cfg(test)]
 mod tests {
     use solana_sdk::hash::hash;
@@ -465,4 +680,387 @@ mod tests {
         assert_eq!(account.lamports, amount);
         Ok(())
     }
+
+    /// 测试解析转账交易功能
+    ///
+    /// 这个测试验证 `parse_transfer_transaction` 函数能够正确解析普通的SOL转账交易，
+    /// 并提取出发送方、接收方和转账金额。
+    #[test]
+    fn test_parse_transfer_transaction() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // 创建测试用的密钥对
+        let from_keypair = Keypair::new();
+        let to_pubkey = Keypair::new().pubkey();
+        let transfer_amount = 1_000_000; // 1 SOL in lamports
+
+        // 创建转账指令
+        let transfer_instruction = system_instruction::transfer(
+            &from_keypair.pubkey(),
+            &to_pubkey,
+            transfer_amount,
+        );
+
+        // 创建交易
+        let mut transaction = Transaction::new_with_payer(
+            &[transfer_instruction],
+            Some(&from_keypair.pubkey()),
+        );
+
+        // 使用一个虚拟的最近区块哈希进行签名
+        let recent_blockhash = Hash::default();
+        transaction.sign(&[&from_keypair], recent_blockhash);
+
+        // 解析交易
+        let result = parse_transfer_transaction(&transaction)?;
+
+        // 验证解析结果 - 现在函数只支持带memo的转账，普通转账应该返回None
+        assert!(result.is_none(), "普通转账交易应该返回None");
+        println!("✓ 普通转账交易正确返回None");
+
+        Ok(())
+    }
+
+    /// 测试解析非转账交易功能
+    ///
+    /// 这个测试验证 `parse_transfer_transaction` 函数对于非转账交易能够正确返回 None。
+    /// 测试使用创建账户指令作为非转账交易的例子。
+    #[test]
+    fn test_parse_non_transfer_transaction() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // 创建测试用的密钥对
+        let payer_keypair = Keypair::new();
+        let new_account_keypair = Keypair::new();
+        
+        // 创建一个非转账指令（创建账户指令）
+        let create_account_instruction = system_instruction::create_account(
+            &payer_keypair.pubkey(),
+            &new_account_keypair.pubkey(),
+            1_000_000, // 最小租金豁免金额
+            0,         // 账户数据大小
+            &system_program::id(), // 所有者程序
+        );
+
+        // 创建交易
+        let mut transaction = Transaction::new_with_payer(
+            &[create_account_instruction],
+            Some(&payer_keypair.pubkey()),
+        );
+
+        // 使用一个虚拟的最近区块哈希进行签名
+        let recent_blockhash = Hash::default();
+        transaction.sign(&[&payer_keypair, &new_account_keypair], recent_blockhash);
+
+        // 解析交易
+        let result = parse_transfer_transaction(&transaction)?;
+
+        // 验证解析结果
+        assert!(result.is_none(), "非转账交易应该返回 None");
+        
+        println!("✓ 非转账交易正确返回 None");
+
+        Ok(())
+    }
+
+    /// 测试解析多指令交易功能
+    ///
+    /// 这个测试验证 `parse_transfer_transaction` 函数对于包含多个指令的交易能够正确返回 None。
+    #[test]
+    fn test_parse_multi_instruction_transaction() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // 创建测试用的密钥对
+        let from_keypair = Keypair::new();
+        let to_pubkey1 = Keypair::new().pubkey();
+        let to_pubkey2 = Keypair::new().pubkey();
+        
+        // 创建两个转账指令
+        let transfer_instruction1 = system_instruction::transfer(
+            &from_keypair.pubkey(),
+            &to_pubkey1,
+            500_000,
+        );
+        
+        let transfer_instruction2 = system_instruction::transfer(
+            &from_keypair.pubkey(),
+            &to_pubkey2,
+            500_000,
+        );
+
+        // 创建包含多个指令的交易
+        let mut transaction = Transaction::new_with_payer(
+            &[transfer_instruction1, transfer_instruction2],
+            Some(&from_keypair.pubkey()),
+        );
+
+        // 使用一个虚拟的最近区块哈希进行签名
+        let recent_blockhash = Hash::default();
+        transaction.sign(&[&from_keypair], recent_blockhash);
+
+        // 解析交易
+        let result = parse_transfer_transaction(&transaction)?;
+
+        // 验证解析结果
+        assert!(result.is_none(), "多指令交易应该返回 None");
+        
+        println!("✓ 多指令交易正确返回 None");
+
+        Ok(())
+    }
+
+    /// 测试解析带有EVM地址memo的转账交易功能
+    ///
+    /// 这个测试验证 `parse_transfer_transaction` 函数能够正确解析包含memo指令的转账交易，
+    /// 并提取出EVM地址。
+    #[test]
+    fn test_parse_transfer_transaction_with_evm_memo() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // 创建测试用的密钥对
+        let from_keypair = Keypair::new();
+        let to_pubkey = Keypair::new().pubkey();
+        let transfer_amount = 2_000_000; // 2 SOL in lamports
+        let evm_address = "0x742d35Cc6634C0532925a3b8D4C2C4e0C8b83265";
+
+        // 使用新的辅助函数创建交易
+        let recent_blockhash = Hash::default();
+        let transaction = create_transfer_with_evm_memo(
+            &from_keypair,
+            &to_pubkey,
+            transfer_amount,
+            evm_address,
+            recent_blockhash,
+        )?;
+
+        // 解析交易
+        let result = parse_transfer_transaction(&transaction)?;
+
+        // 验证解析结果
+        assert!(result.is_some(), "应该成功解析带memo的转账交易");
+        
+        if let Some((parsed_from, parsed_to, parsed_amount, parsed_evm_address)) = result {
+            assert_eq!(parsed_from, from_keypair.pubkey(), "发送方公钥应该匹配");
+            assert_eq!(parsed_to, to_pubkey, "接收方公钥应该匹配");
+            assert_eq!(parsed_amount, transfer_amount, "转账金额应该匹配");
+            assert_eq!(parsed_evm_address, evm_address, "EVM地址应该匹配");
+            
+            println!("✓ 成功解析带EVM memo的转账交易:");
+            println!("  发送方: {}", parsed_from);
+            println!("  接收方: {}", parsed_to);
+            println!("  金额: {} lamports", parsed_amount);
+            println!("  EVM地址: {}", parsed_evm_address);
+        }
+
+        Ok(())
+    }
+
+    /// 测试解析带有无效memo的转账交易功能
+    ///
+    /// 这个测试验证 `parse_transfer_transaction` 函数对于包含无效EVM地址的memo能够正确处理。
+    #[test]
+    fn test_parse_transfer_transaction_with_invalid_memo() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        use solana_sdk::instruction::Instruction;
+        
+        // 创建测试用的密钥对
+        let from_keypair = Keypair::new();
+        let to_pubkey = Keypair::new().pubkey();
+        let transfer_amount = 1_500_000;
+        let invalid_memo = "这不是一个有效的EVM地址";
+
+        // 对于无效memo，我们需要手动构建交易，因为create_transfer_with_evm_memo会验证EVM地址格式
+        let transfer_instruction = system_instruction::transfer(
+            &from_keypair.pubkey(),
+            &to_pubkey,
+            transfer_amount,
+        );
+
+        // 创建memo指令（包含无效的EVM地址）
+        let memo_program_id = Pubkey::try_from("11111111111111111111111111111112").unwrap();
+        let memo_instruction = Instruction::new_with_bytes(
+            memo_program_id,
+            invalid_memo.as_bytes(),
+            vec![],
+        );
+
+        // 创建包含转账和memo的交易
+        let mut transaction = Transaction::new_with_payer(
+            &[transfer_instruction, memo_instruction],
+            Some(&from_keypair.pubkey()),
+        );
+
+        // 使用一个虚拟的最近区块哈希进行签名
+        let recent_blockhash = Hash::default();
+        transaction.sign(&[&from_keypair], recent_blockhash);
+
+        // 解析交易
+        let result = parse_transfer_transaction(&transaction)?;
+
+        // 验证解析结果 - 无效memo应该返回None
+        assert!(result.is_none(), "无效memo的转账交易应该返回None");
+        println!("✓ 带无效memo的转账交易正确返回None");
+
+        Ok(())
+    }
+
+    /// 测试解析带有不带0x前缀EVM地址的转账交易功能
+    ///
+    /// 这个测试验证函数能够正确处理不带0x前缀的40位十六进制EVM地址。
+    #[test]
+    fn test_parse_transfer_transaction_with_evm_memo_no_prefix() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // 创建测试用的密钥对
+        let from_keypair = Keypair::new();
+        let to_pubkey = Keypair::new().pubkey();
+        let transfer_amount = 3_000_000;
+        let evm_address_no_prefix = "742d35Cc6634C0532925a3b8D4C2C4e0C8b83265"; // 不带0x前缀
+        let expected_evm_address = "0x742d35Cc6634C0532925a3b8D4C2C4e0C8b83265"; // 期望的带0x前缀
+
+        // 使用新的辅助函数创建交易（会自动添加0x前缀）
+        let recent_blockhash = Hash::default();
+        let transaction = create_transfer_with_evm_memo(
+            &from_keypair,
+            &to_pubkey,
+            transfer_amount,
+            evm_address_no_prefix,
+            recent_blockhash,
+        )?;
+
+        // 解析交易
+        let result = parse_transfer_transaction(&transaction)?;
+
+        // 验证解析结果
+        assert!(result.is_some(), "应该成功解析带memo的转账交易");
+        
+        if let Some((parsed_from, parsed_to, parsed_amount, parsed_evm_address)) = result {
+            assert_eq!(parsed_from, from_keypair.pubkey(), "发送方公钥应该匹配");
+            assert_eq!(parsed_to, to_pubkey, "接收方公钥应该匹配");
+            assert_eq!(parsed_amount, transfer_amount, "转账金额应该匹配");
+            assert_eq!(parsed_evm_address, expected_evm_address, "EVM地址应该自动添加0x前缀");
+            
+            println!("✓ 成功解析带无前缀EVM memo的转账交易:");
+            println!("  发送方: {}", parsed_from);
+            println!("  接收方: {}", parsed_to);
+            println!("  金额: {} lamports", parsed_amount);
+            println!("  EVM地址: {}", parsed_evm_address);
+        }
+
+        Ok(())
+    }
+
+    /// 测试创建包含EVM地址memo的转账交易功能
+    ///
+    /// 这个测试验证 `create_transfer_with_evm_memo` 函数能够正确创建包含转账和memo指令的交易。
+    #[test]
+    fn test_create_transfer_with_evm_memo() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // 创建测试用的密钥对
+        let from_keypair = Keypair::new();
+        let to_pubkey = Keypair::new().pubkey();
+        let transfer_amount = 5_000_000; // 5 SOL in lamports
+        let evm_address = "0x742d35Cc6634C0532925a3b8D4C2C4e0C8b83265";
+        let recent_blockhash = Hash::default();
+
+        // 使用辅助函数创建交易
+        let transaction = create_transfer_with_evm_memo(
+            &from_keypair,
+            &to_pubkey,
+            transfer_amount,
+            evm_address,
+            recent_blockhash,
+        )?;
+
+        // 验证交易结构
+        assert_eq!(transaction.message.instructions.len(), 2, "交易应该包含2个指令");
+        
+        // 验证第一个指令是转账指令
+        let transfer_instruction = &transaction.message.instructions[0];
+        let transfer_program_id = &transaction.message.account_keys[transfer_instruction.program_id_index as usize];
+        assert_eq!(*transfer_program_id, system_program::id(), "第一个指令应该是系统程序指令");
+
+        // 验证第二个指令是memo指令
+        let memo_instruction = &transaction.message.instructions[1];
+        let memo_program_id = &transaction.message.account_keys[memo_instruction.program_id_index as usize];
+        assert_eq!(memo_program_id.to_string(), "11111111111111111111111111111112", "第二个指令应该是自定义memo程序指令");
+
+        // 验证memo数据包含EVM地址
+        let memo_data = std::str::from_utf8(&memo_instruction.data)?;
+        assert_eq!(memo_data, evm_address, "memo数据应该包含EVM地址");
+
+        // 验证交易已正确签名
+        assert!(!transaction.signatures.is_empty(), "交易应该已签名");
+        assert_eq!(transaction.signatures[0], from_keypair.sign_message(&transaction.message.serialize()), "签名应该正确");
+
+        // 验证可以被解析函数正确解析
+        let parsed_result = parse_transfer_transaction(&transaction)?;
+        assert!(parsed_result.is_some(), "创建的交易应该能被解析函数正确解析");
+
+        if let Some((parsed_from, parsed_to, parsed_amount, parsed_evm_address)) = parsed_result {
+            assert_eq!(parsed_from, from_keypair.pubkey(), "解析的发送方应该匹配");
+            assert_eq!(parsed_to, to_pubkey, "解析的接收方应该匹配");
+            assert_eq!(parsed_amount, transfer_amount, "解析的金额应该匹配");
+            assert_eq!(parsed_evm_address, evm_address, "解析的EVM地址应该匹配");
+        }
+
+        println!("✓ 成功创建并验证包含EVM memo的转账交易");
+        Ok(())
+    }
+
+    /// 测试创建包含无前缀EVM地址memo的转账交易功能
+    ///
+    /// 这个测试验证函数能够自动为无前缀的EVM地址添加0x前缀。
+    #[test]
+    fn test_create_transfer_with_evm_memo_auto_prefix() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // 创建测试用的密钥对
+        let from_keypair = Keypair::new();
+        let to_pubkey = Keypair::new().pubkey();
+        let transfer_amount = 1_000_000;
+        let evm_address_no_prefix = "742d35Cc6634C0532925a3b8D4C2C4e0C8b83265"; // 无前缀
+        let expected_evm_address = "0x742d35Cc6634C0532925a3b8D4C2C4e0C8b83265"; // 期望的带前缀
+        let recent_blockhash = Hash::default();
+
+        // 使用辅助函数创建交易
+        let transaction = create_transfer_with_evm_memo(
+            &from_keypair,
+            &to_pubkey,
+            transfer_amount,
+            evm_address_no_prefix,
+            recent_blockhash,
+        )?;
+
+        // 验证memo数据包含带前缀的EVM地址
+        let memo_instruction = &transaction.message.instructions[1];
+        let memo_data = std::str::from_utf8(&memo_instruction.data)?;
+        assert_eq!(memo_data, expected_evm_address, "memo数据应该包含带0x前缀的EVM地址");
+
+        // 验证解析结果
+        let parsed_result = parse_transfer_transaction(&transaction)?;
+        if let Some((_, _, _, parsed_evm_address)) = parsed_result {
+            assert_eq!(parsed_evm_address, expected_evm_address, "解析的EVM地址应该带有0x前缀");
+        }
+
+        println!("✓ 成功自动添加0x前缀到EVM地址");
+        Ok(())
+    }
+
+    /// 测试创建包含无效EVM地址的交易功能
+    ///
+    /// 这个测试验证函数对无效EVM地址格式的错误处理。
+    #[test]
+    fn test_create_transfer_with_invalid_evm_address() {
+        let from_keypair = Keypair::new();
+        let to_pubkey = Keypair::new().pubkey();
+        let transfer_amount = 1_000_000;
+        let invalid_evm_address = "invalid_address";
+        let recent_blockhash = Hash::default();
+
+        // 尝试创建包含无效EVM地址的交易
+        let result = create_transfer_with_evm_memo(
+            &from_keypair,
+            &to_pubkey,
+            transfer_amount,
+            invalid_evm_address,
+            recent_blockhash,
+        );
+
+        // 验证应该返回错误
+        assert!(result.is_err(), "无效EVM地址应该导致错误");
+        
+        if let Err(e) = result {
+            assert!(e.to_string().contains("Invalid EVM address format"), "错误信息应该指出EVM地址格式无效");
+        }
+
+        println!("✓ 正确拒绝无效的EVM地址格式");
+    }
 }
+

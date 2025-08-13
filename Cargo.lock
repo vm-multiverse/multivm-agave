@@ -430,6 +430,7 @@ dependencies = [
  "solana-send-transaction-service",
  "solana-storage-bigtable",
  "solana-streamer",
+ "solana-system-interface",
  "solana-test-validator",
  "solana-tpu-client",
  "solana-transaction-error",

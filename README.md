@@ -605,3 +605,318 @@ match engine.replay_block(block_data).await {
     }
 }
 ```
+
+### 7. 解析转账交易信息（仅支持带 EVM 地址 memo 的交易）
+
+#### `parse_transfer_transaction` 函数说明
+
+该函数专门用于解析包含 EVM 地址 memo 的 SOL 转账交易。**注意：该函数只处理同时包含转账指令和 memo 指令的交易，不支持普通的转账交易。**
+
+**函数签名**:
+```rust
+pub fn parse_transfer_transaction(
+    transaction: &Transaction,  // 要解析的交易对象
+) -> Result<Option<(Pubkey, Pubkey, u64, String)>, Box<dyn std::error::Error + Send + Sync>>
+```
+
+**参数说明**:
+- `transaction`: [`Transaction`] 对象，包含要解析的交易数据
+
+**返回值**:
+- `Ok(Some((from, to, amount, evm_address)))`: 成功解析带 EVM memo 的转账交易，返回发送方公钥、接收方公钥、转账金额（lamports）和 EVM 地址
+- `Ok(None)`: 交易不符合要求（不是转账+memo组合，或memo中没有有效的EVM地址）
+- `Err(...)`: 解析过程中发生错误
+
+#### 严格的交易模式要求
+
+函数**仅**识别包含以下两个指令的交易：
+1. **第一个指令**: 系统程序的转账指令（`SystemInstruction::Transfer`）
+2. **第二个指令**: 自定义 memo 程序指令（程序ID: `11111111111111111111111111111112`），包含有效的 EVM 地址
+
+**重要限制**:
+- 交易必须恰好包含 2 个指令，多于或少于都会被拒绝
+- 普通的转账交易（没有 memo）会返回 `None`
+- memo 指令必须包含有效的 EVM 地址格式
+
+#### 函数执行流程
+
+1. **指令数量严格验证**: 检查交易恰好包含 2 个指令，否则返回 `None`
+2. **指令类型验证**: 验证第一个是系统转账指令，第二个是自定义 memo 指令
+3. **程序ID验证**: 确认 memo 指令使用自定义程序ID `11111111111111111111111111111112`
+4. **转账指令解析**: 使用 `bincode::deserialize` 安全地解析系统指令
+5. **账户索引验证**: 验证转账指令中账户索引的有效性
+6. **EVM 地址提取**: 从 memo 指令中提取并验证 EVM 地址格式
+7. **数据返回**: 返回发送方、接收方、转账金额和标准化的 EVM 地址
+
+#### EVM 地址识别规则
+
+memo 指令中的 EVM 地址必须满足以下格式之一：
+- **带前缀格式**: `0x` + 40 个十六进制字符（如：`0x742d35Cc6634C0532925a3b8D4C2C4e0C8b83265`）
+- **无前缀格式**: 40 个十六进制字符（自动添加 `0x` 前缀）
+
+**验证规则**:
+- 必须是有效的十六进制字符（0-9, a-f, A-F）
+- 长度必须恰好是 40 个字符（不包括 `0x` 前缀）
+- 无效格式的 memo 会导致函数返回 `None`
+
+#### 使用示例
+
+```rust
+use solana_sdk::transaction::Transaction;
+use crate::bridge::util::parse_transfer_transaction;
+
+// 解析交易
+match parse_transfer_transaction(&transaction) {
+    Ok(Some((from, to, amount, evm_address))) => {
+        println!("✅ 检测到带 EVM 地址的转账交易:");
+        println!("  发送方: {}", from);
+        println!("  接收方: {}", to);
+        println!("  金额: {} lamports ({} SOL)", amount, amount as f64 / 1_000_000_000.0);
+        println!("  EVM 地址: {}", evm_address);
+    }
+    Ok(None) => {
+        println!("ℹ️ 不是符合条件的转账+memo交易，或memo中没有有效的EVM地址");
+    }
+    Err(e) => {
+        println!("❌ 解析交易时发生错误: {}", e);
+    }
+}
+```
+
+#### 应用场景
+
+专门用于跨链桥接场景，识别用户向销毁地址发送资金并指定目标 EVM 地址的交易。当检测到符合条件的交易时：
+
+1. **验证接收方**: 检查接收方是否是预设的销毁地址
+2. **提取信息**: 获取发送方、转账金额和目标 EVM 地址
+3. **触发跨链**: 调用 reth 对应的铸币函数，在 EVM 链上为指定地址铸造等值代币
+4. **记录日志**: 记录跨链操作的详细信息用于审计
+
+#### 与普通转账的区别
+
+| 交易类型 | 指令数量 | memo 要求 | 函数返回 |
+|---------|---------|-----------|----------|
+| 普通转账 | 1个（仅转账） | 无 | `None` |
+| 带普通memo的转账 | 2个（转账+memo） | 任意内容 | `None`（如果memo不是有效EVM地址） |
+| **跨链转账** | **2个（转账+memo）** | **有效EVM地址** | **`Some((from, to, amount, evm_address))`** |
+
+#### 注意事项
+
+- **严格模式**: 函数采用严格的验证模式，只处理特定格式的跨链交易
+- **向后兼容**: 普通转账交易不会被误识别，确保系统安全性
+- **错误处理**: 提供详细的错误信息便于调试和监控
+- **性能优化**: 快速过滤不符合条件的交易，减少不必要的处理开销
+
+### 8. 分发奖励到账户
+
+#### `distribute_reward_to_account` 函数说明
+
+该函数用于向指定账户分发奖励，通过 RPC 调用验证器的内部奖励分发机制，并在操作前后执行 tick 操作确保状态同步。
+
+**函数签名**:
+```rust
+pub fn distribute_reward_to_account(
+    rpc_client: &RpcClient,     // RPC 客户端，用于与验证器通信
+    ipc_client: &IpcClient,     // IPC 客户端，用于 tick 控制
+    recipient: &Pubkey,         // 接收奖励的账户公钥
+    amount: u64,                // 奖励金额（lamports）
+) -> Result<Option<AccountSharedData>, Box<dyn std::error::Error + Send + Sync>>
+```
+
+**参数说明**:
+- `rpc_client`: [`RpcClient`] 实例，用于发送奖励分发 RPC 请求
+- `ipc_client`: [`IpcClient`](validator/src/bridge/ipc.rs:253) 实例，用于在操作前后执行 tick 同步
+- `recipient`: 接收奖励的账户公钥
+- `amount`: 要分发的奖励金额，以 lamports 为单位
+
+**返回值**:
+- `Ok(Some(AccountSharedData))`: 成功分发奖励，返回更新后的账户数据
+- `Ok(None)`: 分发操作完成但未返回账户数据
+- `Err(...)`: 分发过程中发生错误
+
+#### 函数执行流程
+
+1. **前置 tick**: 执行两次 tick 操作，确保验证器状态同步
+2. **RPC 调用**: 通过 `distribute_reward_to_account` RPC 方法分发奖励
+3. **错误处理**: 捕获并转换 RPC 调用错误
+4. **成功日志**: 记录奖励分发成功的信息
+5. **后置 tick**: 再次执行两次 tick 操作，确保状态更新生效
+
+#### 关键特性
+
+- **状态同步**: 通过前后 tick 操作确保验证器状态一致性
+- **错误处理**: 提供详细的错误信息和异常处理
+- **日志记录**: 记录奖励分发的成功状态
+- **账户创建**: 如果目标账户不存在，系统会自动创建
+- **原子操作**: 整个奖励分发过程作为原子操作执行
+
+#### 使用示例
+
+```rust
+use solana_sdk::pubkey::Pubkey;
+use solana_client::rpc_client::RpcClient;
+use crate::bridge::ipc::IpcClient;
+use crate::bridge::util::distribute_reward_to_account;
+
+// 创建客户端连接
+let rpc_client = RpcClient::new("http://127.0.0.1:8899".to_string());
+let ipc_client = IpcClient::new("/tmp/solana-private-validator".to_string());
+
+// 指定接收奖励的账户
+let recipient = Pubkey::new_unique();
+let reward_amount = 1_000_000_000; // 1 SOL in lamports
+
+// 分发奖励
+match distribute_reward_to_account(&rpc_client, &ipc_client, &recipient, reward_amount) {
+    Ok(Some(account_data)) => {
+        println!("✅ 奖励分发成功!");
+        println!("接收方: {}", recipient);
+        println!("奖励金额: {} lamports", reward_amount);
+        println!("账户余额: {} lamports", account_data.lamports);
+    }
+    Ok(None) => {
+        println!("✅ 奖励分发完成，但未返回账户数据");
+    }
+    Err(e) => {
+        println!("❌ 奖励分发失败: {}", e);
+    }
+}
+```
+
+#### 应用场景
+
+- **质押奖励**: 向质押者分发质押收益
+- **空投活动**: 批量向用户分发代币奖励
+
+#### 注意事项
+
+- **账户状态**: 如果目标账户不存在，系统会自动创建新账户
+- **余额检查**: 分发前应确保系统有足够的资金进行分发
+- **网络同步**: tick 操作确保网络状态在分发前后保持同步
+- **批量操作**: 对于大量奖励分发，建议分批处理以避免网络拥塞
+
+#### 性能特点
+
+- **快速执行**: 通过 RPC 直接调用验证器内部机制
+- **状态一致**: tick 机制确保操作的原子性和一致性
+- **错误透明**: 详细的错误信息便于问题诊断
+- **资源友好**: 最小化网络调用和计算开销
+
+### 9. 创建包含 EVM 地址 memo 的转账交易
+
+#### `create_transfer_with_evm_memo` 函数说明
+
+该函数是一个便捷的辅助工具，用于快速创建包含转账指令和 EVM 地址 memo 的交易。这种交易格式专门用于跨链桥接场景，简化了跨链交易的构建过程。
+
+**函数签名**:
+```rust
+pub fn create_transfer_with_evm_memo(
+    from: &Keypair,              // 发送方的密钥对，用于签名交易
+    to: &Pubkey,                 // 接收方的公钥
+    amount: u64,                 // 转账金额（lamports）
+    evm_address: &str,           // 目标EVM地址（支持带或不带0x前缀）
+    recent_blockhash: Hash,      // 最新的区块哈希，用于交易签名
+) -> Result<Transaction, Box<dyn std::error::Error + Send + Sync>>
+```
+
+**参数说明**:
+- `from`: 发送方的 [`Keypair`] 密钥对，用于签名交易
+- `to`: 接收方的 [`Pubkey`] 公钥
+- `amount`: 转账金额，以 lamports 为单位（1 SOL = 1,000,000,000 lamports）
+- `evm_address`: 目标 EVM 地址，支持带或不带 `0x` 前缀的格式
+- `recent_blockhash`: 最新的区块哈希，用于交易签名和防重放攻击
+
+**返回值**:
+- `Ok(Transaction)`: 成功创建的已签名交易，可直接发送到网络
+- `Err(Box<dyn std::error::Error + Send + Sync>)`: 创建过程中发生错误
+
+#### 函数执行流程
+
+1. **EVM 地址标准化**: 自动检测并标准化 EVM 地址格式
+   - 如果地址已有 `0x` 前缀，保持不变
+   - 如果地址没有前缀但是有效的 40 位十六进制，自动添加 `0x` 前缀
+   - 如果地址格式无效，返回错误
+
+2. **创建转账指令**: 使用 Solana 系统程序创建标准转账指令
+
+3. **创建 memo 指令**: 使用自定义 memo 程序（ID: `11111111111111111111111111111112`）创建包含 EVM 地址的 memo 指令
+
+4. **构建交易**: 将转账指令和 memo 指令组合成一个完整的交易
+
+5. **签名交易**: 使用发送方密钥对对交易进行签名
+
+#### EVM 地址处理规则
+
+函数支持多种 EVM 地址输入格式：
+
+| 输入格式 | 示例 | 处理结果 | 说明 |
+|---------|------|----------|------|
+| 无前缀 | `742d35Cc6634C0532925a3b8D4C2C4e0C8b83265` | 添加 `0x` 前缀 | 自动标准化 |
+| 无效格式 | `invalid_address` | 返回错误 | 长度或字符不符合要求 |
+
+**验证规则**:
+- 必须是 40 个十六进制字符（不包括 `0x` 前缀）
+- 只能包含字符：`0-9`, `a-f`, `A-F`
+- 大小写不敏感
+
+#### 使用示例
+
+##### 基本使用
+```rust
+use solana_sdk::{signature::Keypair, pubkey::Pubkey, hash::Hash};
+use crate::bridge::util::create_transfer_with_evm_memo;
+
+// 创建密钥对和参数
+let from_keypair = Keypair::new();
+let to_pubkey = Pubkey::new_unique();
+let amount = 1_000_000_000; // 1 SOL
+let evm_address = "0x742d35Cc6634C0532925a3b8D4C2C4e0C8b83265";
+let recent_blockhash = Hash::default(); // 实际使用中应从 RPC 获取
+
+// 创建交易
+match create_transfer_with_evm_memo(
+    &from_keypair,
+    &to_pubkey,
+    amount,
+    evm_address,
+    recent_blockhash,
+) {
+    Ok(transaction) => {
+        println!("✅ 交易创建成功!");
+        println!("交易签名: {:?}", transaction.signatures[0]);
+        // 现在可以发送交易到网络
+    }
+    Err(e) => {
+        println!("❌ 交易创建失败: {}", e);
+    }
+}
+```
+
+#### 与解析函数的配合
+
+该函数创建的交易完全兼容 [`parse_transfer_transaction`](README.md:611) 函数：
+
+```rust
+// 创建交易
+let transaction = create_transfer_with_evm_memo(
+    &from_keypair,
+    &to_pubkey,
+    amount,
+    evm_address,
+    recent_blockhash,
+)?;
+
+// 验证交易可以被正确解析
+match parse_transfer_transaction(&transaction)? {
+    Some((parsed_from, parsed_to, parsed_amount, parsed_evm_address)) => {
+        assert_eq!(parsed_from, from_keypair.pubkey());
+        assert_eq!(parsed_to, to_pubkey);
+        assert_eq!(parsed_amount, amount);
+        assert_eq!(parsed_evm_address, "0x742d35Cc6634C0532925a3b8D4C2C4e0C8b83265");
+        println!("✅ 交易格式验证通过");
+    }
+    None => {
+        println!("❌ 交易格式验证失败");
+    }
+}
+```
