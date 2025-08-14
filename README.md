@@ -892,6 +892,198 @@ match create_transfer_with_evm_memo(
 }
 ```
 
+### 10. 检测上一个区块的交易是否被执行了
+
+#### 交易执行状态检测说明
+
+该功能用于检测区块中的交易是否已经被成功执行。通过遍历区块中的交易数据，解析转账交易信息，并通过 Solana RPC 的 `getSignatureStatuses` 方法查询交易的确认状态。
+
+#### 核心检测流程
+
+##### 1. 遍历区块交易数据
+
+使用 For 循环遍历区块中的所有交易。由于 Multivm 拿到的交易已经是实例化好的 [`Transaction`] 对象，可以直接进行处理：
+
+```rust
+use solana_sdk::transaction::Transaction;
+use crate::bridge::util::parse_transfer_transaction;
+
+// 假设 block 是一个包含交易列表的区块数据结构
+for transaction in &block.transactions {
+    // 检查是否为带 EVM 地址 memo 的转账交易
+    match parse_transfer_transaction(transaction) {
+        Ok(Some((from, to, amount, evm_address))) => {
+            println!("检测到跨链转账交易:");
+            println!("  发送方: {}", from);
+            println!("  接收方: {}", to);
+            println!("  金额: {} lamports", amount);
+            println!("  EVM 地址: {}", evm_address);
+            
+            // 获取交易签名进行状态查询
+            let signature = transaction.signatures[0];
+            check_transaction_status(&rpc_client, &signature).await;
+        }
+        Ok(None) => {
+            // 不是目标类型的交易，跳过
+            continue;
+        }
+        Err(e) => {
+            println!("解析交易时发生错误: {}", e);
+        }
+    }
+}
+```
+
+##### 2. 调用 parse_transfer_transaction 检查交易类型
+
+使用 [`parse_transfer_transaction`](README.md:617) 函数检查哪些交易是带有 EVM 地址 memo 的转账交易。该函数会返回交易的详细信息，包括发送方、接收方、转账金额和目标 EVM 地址。
+
+##### 3. 获取交易签名并查询状态
+
+拿到交易签名后，通过调用 Solana RPC 的 `getSignatureStatuses` 方法查询交易的确认状态：
+
+```rust
+use solana_client::rpc_client::RpcClient;
+use solana_sdk::signature::Signature;
+use solana_client::rpc_config::RpcSignatureStatusConfig;
+
+async fn check_transaction_status(
+    rpc_client: &RpcClient,
+    signature: &Signature,
+) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+    // 配置查询参数
+    let config = RpcSignatureStatusConfig {
+        search_transaction_history: true,
+    };
+    
+    // 查询交易状态
+    match rpc_client.get_signature_statuses_with_config(&[*signature], config) {
+        Ok(response) => {
+            if let Some(status_option) = response.value.get(0) {
+                if let Some(status) = status_option {
+                    // 检查确认状态
+                    if let Some(confirmation_status) = &status.confirmation_status {
+                        match confirmation_status.as_str() {
+                            "processed" => {
+                                println!("✅ 交易已被处理 (processed): {}", signature);
+                                return Ok(true);
+                            }
+                            "confirmed" => {
+                                println!("✅ 交易已被确认 (confirmed): {}", signature);
+                                return Ok(true);
+                            }
+                            "finalized" => {
+                                println!("✅ 交易已被最终确认 (finalized): {}", signature);
+                                return Ok(true);
+                            }
+                            _ => {
+                                println!("⚠️ 交易状态未知: {} - {}", signature, confirmation_status);
+                                return Ok(false);
+                            }
+                        }
+                    } else {
+                        println!("⚠️ 交易无确认状态信息: {}", signature);
+                        return Ok(false);
+                    }
+                } else {
+                    println!("❌ 交易未找到: {}", signature);
+                    return Ok(false);
+                }
+            } else {
+                println!("❌ 查询响应为空: {}", signature);
+                return Ok(false);
+            }
+        }
+        Err(e) => {
+            println!("❌ 查询交易状态失败: {} - {}", signature, e);
+            return Err(Box::new(e));
+        }
+    }
+}
+```
+
+#### 确认状态说明
+
+根据 [Solana RPC 文档](https://solana.com/zh/docs/rpc/http/getsignaturestatuses)，`getSignatureStatuses` 方法返回的 `confirmationStatus` 字段有以下几种状态：
+
+| 状态 | 说明 | 销毁成功判断 |
+|------|------|-------------|
+| `"processed"` | 交易已被处理并包含在区块中 | ✅ **销毁成功** |
+| `"confirmed"` | 交易已被确认（更高级别的确认） | ✅ 销毁成功 |
+| `"finalized"` | 交易已被最终确认（最高级别） | ✅ 销毁成功 |
+
+**重要**: 当 `confirmationStatus` 为 `"processed"` 时，即表示交易已经被成功执行，**销毁操作成功**。
+
+#### 完整的区块交易检测示例
+
+```rust
+use solana_client::rpc_client::RpcClient;
+use solana_sdk::transaction::Transaction;
+use crate::bridge::util::parse_transfer_transaction;
+
+pub async fn check_block_transactions_execution(
+    rpc_client: &RpcClient,
+    block_transactions: &[Transaction],
+) -> Result<Vec<(String, bool)>, Box<dyn std::error::Error + Send + Sync>> {
+    let mut results = Vec::new();
+    
+    println!("开始检测区块中的 {} 个交易...", block_transactions.len());
+    
+    for (index, transaction) in block_transactions.iter().enumerate() {
+        println!("检测交易 {}/{}", index + 1, block_transactions.len());
+        
+        // 解析转账交易
+        match parse_transfer_transaction(transaction) {
+            Ok(Some((from, to, amount, evm_address))) => {
+                let signature = transaction.signatures[0];
+                println!("发现跨链转账交易: {}", signature);
+                println!("  发送方: {}", from);
+                println!("  接收方: {}", to);
+                println!("  金额: {} lamports", amount);
+                println!("  目标 EVM 地址: {}", evm_address);
+                
+                // 检查交易执行状态
+                match check_transaction_status(rpc_client, &signature).await {
+                    Ok(is_executed) => {
+                        results.push((signature.to_string(), is_executed));
+                        if is_executed {
+                            println!("✅ 交易 {} 执行成功，销毁操作完成", signature);
+                        } else {
+                            println!("❌ 交易 {} 执行失败或未完成", signature);
+                        }
+                    }
+                    Err(e) => {
+                        println!("❌ 检查交易 {} 状态时发生错误: {}", signature, e);
+                        results.push((signature.to_string(), false));
+                    }
+                }
+            }
+            Ok(None) => {
+                // 不是目标类型的交易，跳过
+                println!("跳过非跨链转账交易");
+            }
+            Err(e) => {
+                println!("解析交易时发生错误: {}", e);
+            }
+        }
+        
+        println!("---");
+    }
+    
+    // 统计结果
+    let total_checked = results.len();
+    let successful = results.iter().filter(|(_, success)| *success).count();
+    let failed = total_checked - successful;
+    
+    println!("检测完成:");
+    println!("  总计检查: {} 个跨链交易", total_checked);
+    println!("  执行成功: {} 个", successful);
+    println!("  执行失败: {} 个", failed);
+    
+    Ok(results)
+}
+```
+
 #### 与解析函数的配合
 
 该函数创建的交易完全兼容 [`parse_transfer_transaction`](README.md:611) 函数：
