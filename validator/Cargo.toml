@@ -46,6 +46,7 @@ solana-geyser-plugin-manager = { workspace = true }
 solana-gossip = { workspace = true }
 solana-ledger = { workspace = true }
 solana-logger = "=2.3.1"
+jsonwebtoken = "9.0"
 solana-metrics = { workspace = true }
 solana-net-utils = { workspace = true }
 solana-perf = { workspace = true }
@@ -74,6 +75,7 @@ solana-transaction-status-client-types = {workspace = true}
 symlink = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+hex = "0.4.3"
 
 [dev-dependencies]
 assert_cmd = { workspace = true }

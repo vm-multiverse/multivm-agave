@@ -773,9 +773,24 @@ impl RpcClient {
             RpcSendTransactionConfig {
                 preflight_commitment: Some(self.commitment().commitment),
                 ..RpcSendTransactionConfig::default()
-            },
+            }, // todo yzm, 其实好像可以改这个加个token，但不知道会不会影响别的
         )
         .await
+    }
+    
+    pub async fn send_transaction_with_auth_token(
+        &self,
+        transaction: &impl SerializableTransaction,
+        auth_token: String
+    ) -> ClientResult<Signature> {
+        self.send_transaction_with_config_and_auth_token(
+            transaction,
+            RpcSendTransactionConfig {
+                preflight_commitment: Some(self.commitment().commitment),
+                ..RpcSendTransactionConfig::default()
+            },
+            auth_token,
+        ).await
     }
 
     /// Submits a signed transaction to the network.
@@ -857,6 +872,73 @@ impl RpcClient {
     /// # })?;
     /// # Ok::<(), Error>(())
     /// ```
+    pub async fn send_transaction_with_config_and_auth_token(
+        &self,
+        transaction: &impl SerializableTransaction,
+        config: RpcSendTransactionConfig,
+        auth_token: String,
+    ) -> ClientResult<Signature> {
+        let encoding = config.encoding.unwrap_or(UiTransactionEncoding::Base64);
+        let preflight_commitment = CommitmentConfig {
+            commitment: config.preflight_commitment.unwrap_or_default(),
+        };
+        let config = RpcSendTransactionConfig {
+            encoding: Some(encoding),
+            preflight_commitment: Some(preflight_commitment.commitment),
+            ..config
+        };
+        let serialized_encoded = serialize_and_encode(transaction, encoding)?;
+        let signature_base58_str: String = match self
+            .send_with_auth_token(
+                RpcRequest::SendTransaction,
+                auth_token,
+                json!([serialized_encoded, config]),
+            )
+            .await
+        {
+            Ok(signature_base58_str) => signature_base58_str,
+            Err(err) => {
+                if let ClientErrorKind::RpcError(RpcError::RpcResponseError {
+                                                     code,
+                                                     message,
+                                                     data,
+                                                 }) = &err.kind
+                {
+                    debug!("{} {}", code, message);
+                    if let RpcResponseErrorData::SendTransactionPreflightFailure(
+                        RpcSimulateTransactionResult {
+                            logs: Some(logs), ..
+                        },
+                    ) = data
+                    {
+                        for (i, log) in logs.iter().enumerate() {
+                            debug!("{:>3}: {}", i + 1, log);
+                        }
+                        debug!("");
+                    }
+                }
+                return Err(err);
+            }
+        };
+
+        let signature = signature_base58_str
+            .parse::<Signature>()
+            .map_err(|err| Into::<ClientError>::into(RpcError::ParseError(err.to_string())))?;
+        // A mismatching RPC response signature indicates an issue with the RPC node, and
+        // should not be passed along to confirmation methods. The transaction may or may
+        // not have been submitted to the cluster, so callers should verify the success of
+        // the correct transaction signature independently.
+        if signature != *transaction.get_signature() {
+            Err(RpcError::RpcRequestError(format!(
+                "RPC node returned mismatched signature {:?}, expected {:?}",
+                signature,
+                transaction.get_signature()
+            ))
+                .into())
+        } else {
+            Ok(*transaction.get_signature())
+        }
+    }
     pub async fn send_transaction_with_config(
         &self,
         transaction: &impl SerializableTransaction,
@@ -4095,15 +4177,16 @@ impl RpcClient {
             .await?
             .value)
     }
-    pub async fn distribute_reward_to_account(&self, pubkey: &Pubkey, amount: u64) -> ClientResult<Option<AccountSharedData>> {
+    pub async fn distribute_reward_to_account(&self, pubkey: &Pubkey, amount: u64, auth_token: String) -> ClientResult<Option<AccountSharedData>> {
         let config = RpcAccountInfoConfig{
             encoding: Some(UiAccountEncoding::JsonParsed),
             commitment: None,
             data_slice: None,
             min_context_slot: None,
         };
-        let response = self.send(
+        let response = self.send_with_auth_token(
             RpcRequest::DistributeRewardToAccount,
+            auth_token,
             json!([pubkey.to_string(), amount]),
         ).await;
         let result = response
@@ -4675,6 +4758,19 @@ impl RpcClient {
             blockhash
         ))
         .into())
+    }
+    pub async fn send_with_auth_token<T>(&self, request: RpcRequest, auth_token: String, params: Value) -> ClientResult<T>
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        assert!(params.is_array() || params.is_null());
+        let response = self
+            .sender
+            .send_with_auth_token(request, params, auth_token)
+            .await
+            .map_err(|err| err.into_with_request(request))?;
+        serde_json::from_value(response)
+            .map_err(|err| ClientError::new_with_request(err.into(), request))
     }
 
     pub async fn send<T>(&self, request: RpcRequest, params: Value) -> ClientResult<T>

@@ -1,5 +1,6 @@
 //! Nonblocking [`RpcSender`] over HTTP.
 
+use serde_json::Value;
 use {
     crate::rpc_sender::*,
     async_trait::async_trait,
@@ -133,22 +134,111 @@ impl RpcSender for HttpSender {
     fn get_transport_stats(&self) -> RpcTransportStats {
         self.stats.read().unwrap().clone()
     }
+    async fn send_with_auth_token(&self, request: RpcRequest, params: Value, auth_token: String) -> Result<Value> {
+        let mut stats_updater = StatsUpdater::new(&self.stats);
+        let request_id = self.request_id.fetch_add(1, Ordering::Relaxed);
+        let request_json = request.build_request_json(request_id, params.clone()).to_string();
+        let mut too_many_requests_retries = 5;
+        loop {
+            let response = {
+                let client = self.client.clone();
+                let request_json = request_json.clone();
+                // YZM: 在这里加上jwt
+                // println!("test jwt here!");
+                client
+                    .post(&self.url)
+                    .header(CONTENT_TYPE, "application/json")
+                    .bearer_auth(auth_token.clone())
+                    .body(request_json)
+                    .send()
+                    .await
+            }?;
 
+            if !response.status().is_success() {
+                if response.status() == StatusCode::TOO_MANY_REQUESTS
+                    && too_many_requests_retries > 0
+                {
+                    let mut duration = Duration::from_millis(500);
+                    if let Some(retry_after) = response.headers().get(RETRY_AFTER) {
+                        if let Ok(retry_after) = retry_after.to_str() {
+                            if let Ok(retry_after) = retry_after.parse::<u64>() {
+                                if retry_after < 120 {
+                                    duration = Duration::from_secs(retry_after);
+                                }
+                            }
+                        }
+                    }
+
+                    too_many_requests_retries -= 1;
+                    debug!(
+                                "Too many requests: server responded with {:?}, {} retries left, pausing for {:?}",
+                                response, too_many_requests_retries, duration
+                            );
+
+                    sleep(duration).await;
+                    stats_updater.add_rate_limited_time(duration);
+                    continue;
+                }
+                return Err(response.error_for_status().unwrap_err().into());
+            }
+
+            let mut json = response.json::<serde_json::Value>().await?;
+            if json["error"].is_object() {
+                return match serde_json::from_value::<RpcErrorObject>(json["error"].clone()) {
+                    Ok(rpc_error_object) => {
+                        let data = match rpc_error_object.code {
+                            custom_error::JSON_RPC_SERVER_ERROR_SEND_TRANSACTION_PREFLIGHT_FAILURE => {
+                                match serde_json::from_value::<RpcSimulateTransactionResult>(json["error"]["data"].clone()) {
+                                    Ok(data) => RpcResponseErrorData::SendTransactionPreflightFailure(data),
+                                    Err(err) => {
+                                        debug!("Failed to deserialize RpcSimulateTransactionResult: {:?}", err);
+                                        RpcResponseErrorData::Empty
+                                    }
+                                }
+                            },
+                            custom_error::JSON_RPC_SERVER_ERROR_NODE_UNHEALTHY => {
+                                match serde_json::from_value::<custom_error::NodeUnhealthyErrorData>(json["error"]["data"].clone()) {
+                                    Ok(custom_error::NodeUnhealthyErrorData {num_slots_behind}) => RpcResponseErrorData::NodeUnhealthy {num_slots_behind},
+                                    Err(_err) => {
+                                        RpcResponseErrorData::Empty
+                                    }
+                                }
+                            },
+                            _ => RpcResponseErrorData::Empty
+                        };
+
+                        Err(RpcError::RpcResponseError {
+                            code: rpc_error_object.code,
+                            message: rpc_error_object.message,
+                            data,
+                        }
+                            .into())
+                    }
+                    Err(err) => Err(RpcError::RpcRequestError(format!(
+                        "Failed to deserialize RPC error response: {} [{}]",
+                        serde_json::to_string(&json["error"]).unwrap(),
+                        err
+                    ))
+                        .into()),
+                };
+            }
+            return Ok(json["result"].take());
+        }
+    }
     async fn send(
         &self,
         request: RpcRequest,
         params: serde_json::Value,
     ) -> Result<serde_json::Value> {
         let mut stats_updater = StatsUpdater::new(&self.stats);
-
         let request_id = self.request_id.fetch_add(1, Ordering::Relaxed);
-        let request_json = request.build_request_json(request_id, params).to_string();
-
+        let request_json = request.build_request_json(request_id, params.clone()).to_string();
         let mut too_many_requests_retries = 5;
         loop {
             let response = {
                 let client = self.client.clone();
                 let request_json = request_json.clone();
+                // YZM: 在这里加上jwt
                 client
                     .post(&self.url)
                     .header(CONTENT_TYPE, "application/json")

@@ -90,7 +90,9 @@ impl RpcSender for MockSender {
     fn get_transport_stats(&self) -> RpcTransportStats {
         RpcTransportStats::default()
     }
-
+    async fn send_with_auth_token(&self, request: RpcRequest, params: Value, auth_token: String) -> Result<Value> {
+        todo!()
+    }
     async fn send(
         &self,
         request: RpcRequest,

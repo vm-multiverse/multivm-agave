@@ -770,7 +770,8 @@ pub mod rpc {
             &self,
             meta: Self::Metadata,
             pubkey_str: String,
-            amount: u64) -> Result<RpcResponse<Option<UiAccount>>> {
+            amount: u64,
+        ) -> Result<RpcResponse<Option<UiAccount>>> {
             debug!("distribute_reward_to_account rpc request received: {:?}", pubkey_str);
             let pubkey = verify_pubkey(&pubkey_str)?;
             debug!("pubkey {pubkey:?} verified.");

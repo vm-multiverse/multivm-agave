@@ -176,6 +176,7 @@ pub fn send_and_confirm_transaction(
     tick_client: &IpcClient,     // IPC 客户端，用于手动控制 tick
     rpc_client: &RpcClient,      // RPC 客户端，用于与验证器通信
     transaction: &Transaction,   // 要发送的交易
+    jwt_secret: &str,            // JWT 密钥，从本地 hex 文件读取
 ) -> Result<Signature, Box<dyn std::error::Error + Send + Sync>>
 ```
 
@@ -192,6 +193,7 @@ pub fn send_and_confirm_transaction_with_config(
     transaction: &Transaction,   // 要发送的交易
     max_retries: u32,           // 最大重试次数
     poll_interval: Duration,    // 轮询间隔
+    jwt_secret: &str,           // JWT 密钥，从本地 hex 文件读取
 ) -> Result<Signature, Box<dyn std::error::Error + Send + Sync>>
 ```
 
@@ -201,6 +203,7 @@ pub fn send_and_confirm_transaction_with_config(
 - `transaction`: 已签名的 [`Transaction`] 对象，包含要执行的指令
 - `max_retries`: 交易确认的最大重试次数
 - `poll_interval`: 查询交易状态的时间间隔
+- `jwt_secret`: JWT 密钥字符串，需要从本地 hex 文件中读取并以 `&str` 形式传入
 
 **函数执行流程**:
 1. **交易前 tick**: 在发送交易前先执行一次 tick，让内部产生一次投票交易
@@ -216,6 +219,9 @@ pub fn test_airdrop() {
     // 创建客户端连接
     let tick_client = IpcClient::new("/tmp/solana-private-validator".to_string());
     let rpc_client = RpcClient::new("http://127.0.0.1:8899".to_string());
+
+    // 从本地 hex 文件读取 JWT 密钥
+    let jwt_secret = "bd1fa71e224227a12439367e525610e7c0d242ecfa595ec471299b535e5d179d"; // 示例 hex 密钥
 
     // 创建 faucet keypair (发送方，Airdrop)
     let faucet_keypair = super::faucet_keypair();
@@ -247,8 +253,8 @@ pub fn test_airdrop() {
     // 签名交易
     transaction.sign(&[&faucet_keypair], recent_blockhash);
 
-    // 发送并确认交易
-    match send_and_confirm_transaction(&tick_client, &rpc_client, &transaction) {
+    // 发送并确认交易（现在需要传入 JWT 密钥）
+    match send_and_confirm_transaction(&tick_client, &rpc_client, &transaction, jwt_secret) {
         Ok(signature) => {
             println!(
                 "✅ Airdrop successful! Transaction signature: {}",
@@ -720,6 +726,7 @@ pub fn distribute_reward_to_account(
     ipc_client: &IpcClient,     // IPC 客户端，用于 tick 控制
     recipient: &Pubkey,         // 接收奖励的账户公钥
     amount: u64,                // 奖励金额（lamports）
+    jwt_secret: &str,           // JWT 密钥，从本地 hex 文件读取
 ) -> Result<Option<AccountSharedData>, Box<dyn std::error::Error + Send + Sync>>
 ```
 
@@ -728,6 +735,7 @@ pub fn distribute_reward_to_account(
 - `ipc_client`: [`IpcClient`](validator/src/bridge/ipc.rs:253) 实例，用于在操作前后执行 tick 同步
 - `recipient`: 接收奖励的账户公钥
 - `amount`: 要分发的奖励金额，以 lamports 为单位
+- `jwt_secret`: JWT 密钥字符串，需要从本地 hex 文件中读取并以 `&str` 形式传入
 
 **返回值**:
 - `Ok(Some(AccountSharedData))`: 成功分发奖励，返回更新后的账户数据
@@ -762,12 +770,15 @@ use crate::bridge::util::distribute_reward_to_account;
 let rpc_client = RpcClient::new("http://127.0.0.1:8899".to_string());
 let ipc_client = IpcClient::new("/tmp/solana-private-validator".to_string());
 
+// 从本地 hex 文件读取 JWT 密钥
+let jwt_secret = "bd1fa71e224227a12439367e525610e7c0d242ecfa595ec471299b535e5d179d"; // 示例 hex 密钥
+
 // 指定接收奖励的账户
 let recipient = Pubkey::new_unique();
 let reward_amount = 1_000_000_000; // 1 SOL in lamports
 
-// 分发奖励
-match distribute_reward_to_account(&rpc_client, &ipc_client, &recipient, reward_amount) {
+// 分发奖励（现在需要传入 JWT 密钥）
+match distribute_reward_to_account(&rpc_client, &ipc_client, &recipient, reward_amount, jwt_secret) {
     Ok(Some(account_data)) => {
         println!("✅ 奖励分发成功!");
         println!("接收方: {}", recipient);
