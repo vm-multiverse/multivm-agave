@@ -1,6 +1,9 @@
+use std::time::{SystemTime, UNIX_EPOCH};
 use log::info;
 use solana_sdk::account::AccountSharedData;
 use solana_sdk::pubkey::Pubkey;
+use jsonwebtoken::{encode, Header as JwtHeader, EncodingKey, Algorithm};
+
 use {
     crate::bridge::ipc::IpcClient,
     log::{debug, error, warn},
@@ -31,6 +34,7 @@ use {
 /// - `tick_client`: IPC客户端，用于在轮询过程中执行tick操作
 /// - `rpc_client`: Solana RPC客户端，用于发送交易和查询状态
 /// - `transaction`: 要发送的交易对象
+/// - `jwt_secret`: 本地jwt秘密hex
 ///
 /// ### 返回值
 /// - `Ok(Signature)`: 交易成功确认后返回交易签名
@@ -51,6 +55,7 @@ pub fn send_and_confirm_transaction(
     tick_client: &IpcClient,
     rpc_client: &RpcClient,
     transaction: &Transaction,
+    jwt_secret: &str, 
 ) -> Result<Signature, Box<dyn std::error::Error + Send + Sync>> {
     send_and_confirm_transaction_with_config(
         tick_client,
@@ -58,6 +63,7 @@ pub fn send_and_confirm_transaction(
         transaction,
         60,                         // 默认最大重试次数
         Duration::from_millis(100), // 默认轮询间隔 100ms
+        jwt_secret
     )
 }
 
@@ -103,9 +109,11 @@ pub fn send_and_confirm_transaction_with_config(
     transaction: &Transaction,
     max_retries: u32,
     poll_interval: Duration,
+    jwt_secret: &str,
 ) -> Result<Signature, Box<dyn std::error::Error + Send + Sync>> {
     // Step 1: Send transaction to get signature
-    let signature = rpc_client.send_transaction(transaction).map_err(|e| {
+    let jwt_token = create_jwt_token(jwt_secret)?;
+    let signature = rpc_client.send_transaction_with_auto_token(transaction, jwt_token).map_err(|e| {
         error!("Failed to send transaction: {}", e);
         Box::new(std::io::Error::new(
             std::io::ErrorKind::Other,
@@ -292,11 +300,28 @@ pub fn get_slot(rpc_client: &RpcClient) -> Result<u64, Box<dyn std::error::Error
 // 考虑到发奖励的时候没有account咋办，逻辑上应该要先创建，在distribute里也加了这个判断
 // pub fn create_bank_account()
 
-pub fn distribute_reward_to_account(rpc_client: &RpcClient, ipc_client: &IpcClient, recipient: &Pubkey, amount: u64) -> Result<Option<AccountSharedData>, Box<dyn std::error::Error + Send + Sync>> {
+#[derive(serde::Serialize)]
+struct Claims {
+    iat: u64,
+    exp: u64,
+}
+fn create_jwt_token(secret: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+    let claims = Claims {
+        iat: now,
+        exp: now + 3600, // 1小时过期
+    };
+
+    let key = EncodingKey::from_secret(hex::decode(secret.to_string())?.as_ref());
+    let token = encode(&JwtHeader::new(Algorithm::HS256), &claims, &key)?;
+    Ok(token)
+}
+pub fn distribute_reward_to_account(rpc_client: &RpcClient, ipc_client: &IpcClient, recipient: &Pubkey, amount: u64, jwt_secret: &str) -> Result<Option<AccountSharedData>, Box<dyn std::error::Error + Send + Sync>> {
     // 发送RPC请求
+    let jwt_token = create_jwt_token(jwt_secret)?;
     ipc_client.tick()?;
     ipc_client.tick()?;
-    let response = rpc_client.distribute_reward_to_account(recipient, amount)
+    let response = rpc_client.distribute_reward_to_account(recipient, amount, jwt_token)
         .map_err(|e| {
             error!("Failed to send distribute reward RPC: {}", e);
             Box::new(std::io::Error::new(
@@ -625,7 +650,7 @@ mod tests {
             transaction
         }).collect::<Vec<_>>();
         for tx in transactions.iter() {
-            let send_result = send_and_confirm_transaction(&ipc_client, &rpc_client, tx);
+            let send_result = send_and_confirm_transaction(&ipc_client, &rpc_client, tx,"bd1fa71e224227a12439367e525610e7c0d242ecfa595ec471299b535e5d179d");
             match send_result {
                 Ok(signature) => {
                     match rpc_client.get_signature_status_with_commitment(
@@ -669,7 +694,8 @@ mod tests {
         let client = IpcClient::new("/tmp/solana-private-validator".to_string());
         let recipient = Keypair::new().pubkey();
         let amount = 1000;
-        let account_data = distribute_reward_to_account(&rpc_client, &client, &recipient, amount)?;
+        let test_hex_jwt_secret = "bd1fa71e224227a12439367e525610e7c0d242ecfa595ec471299b535e5d179d";
+        let account_data = distribute_reward_to_account(&rpc_client, &client, &recipient, amount, test_hex_jwt_secret)?;
         if let Some(account_in_response) = account_data {
             println!("{:#?}", account_in_response);
         } else {

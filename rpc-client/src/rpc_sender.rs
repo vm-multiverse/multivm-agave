@@ -31,6 +31,12 @@ pub trait RpcSender {
         request: RpcRequest,
         params: serde_json::Value,
     ) -> Result<serde_json::Value>;
+    async fn send_with_auth_token(
+        &self,
+        request: RpcRequest,
+        params: serde_json::Value,
+        auth_token: String,
+    ) -> Result<serde_json::Value>;
     fn get_transport_stats(&self) -> RpcTransportStats;
     fn url(&self) -> String;
 }

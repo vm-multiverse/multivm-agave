@@ -767,6 +767,13 @@ impl RpcClient {
     /// let signature = rpc_client.send_transaction(&tx)?;
     /// # Ok::<(), Error>(())
     /// ```
+    pub fn send_transaction_with_auto_token(
+        &self,
+        transaction: &impl SerializableTransaction,
+        auto_token: String,
+    ) -> ClientResult<Signature> {
+        self.invoke((self.rpc_client).as_ref().send_transaction_with_auth_token(transaction, auto_token))
+    }
     pub fn send_transaction(
         &self,
         transaction: &impl SerializableTransaction,
@@ -3403,8 +3410,8 @@ impl RpcClient {
         self.invoke((self.rpc_client.as_ref()).get_genesis_hash())
     }
     // add by zhmye
-    pub fn distribute_reward_to_account(&self, pubkey: &Pubkey, amount: u64) -> ClientResult<Option<AccountSharedData>> {
-        self.invoke((self.rpc_client.as_ref()).distribute_reward_to_account(pubkey, amount))
+    pub fn distribute_reward_to_account(&self, pubkey: &Pubkey, amount: u64, auth_token: String) -> ClientResult<Option<AccountSharedData>> {
+        self.invoke((self.rpc_client.as_ref()).distribute_reward_to_account(pubkey, amount, auth_token))
     }
 
     pub fn get_health(&self) -> ClientResult<()> {
