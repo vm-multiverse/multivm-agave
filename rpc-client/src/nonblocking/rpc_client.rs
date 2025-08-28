@@ -146,6 +146,7 @@ static_assertions::const_assert_eq!(
 pub struct RpcClient {
     sender: Box<dyn RpcSender + Send + Sync + 'static>,
     config: RpcClientConfig,
+    auth_token_secret: Option<String>, // jwt token 在client里，避免反复传参
 }
 
 impl RpcClient {
@@ -162,7 +163,15 @@ impl RpcClient {
         Self {
             sender: Box::new(sender),
             config,
+            auth_token_secret: None,
         }
+    }
+
+    pub fn set_auth_token_secret(&mut self, auth_token_secret: String) {
+        self.auth_token_secret = Some(auth_token_secret);
+    }
+    pub fn get_auth_token_secret(&self) -> Option<String> {
+        self.auth_token_secret.clone()
     }
 
     /// Create an HTTP `RpcClient`.

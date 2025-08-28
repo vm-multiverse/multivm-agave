@@ -49,7 +49,7 @@ mod tests {
     pub fn test_airdrop() {
         // 创建客户端连接
         let tick_client = IpcClient::new("/tmp/solana-private-validator".to_string());
-        let rpc_client = RpcClient::new("http://127.0.0.1:8899".to_string());
+        let mut rpc_client = RpcClient::new("http://127.0.0.1:8899".to_string());
 
         // 创建 faucet keypair (发送方)
         let faucet_keypair = super::faucet_keypair();
@@ -99,6 +99,7 @@ mod tests {
             // 签名交易
             transaction.sign(&[&faucet_keypair], recent_blockhash);
             let test_hex_jwt_secret = "bd1fa71e224227a12439367e525610e7c0d242ecfa595ec471299b535e5d179d";
+            rpc_client.set_auth_token_secret(test_hex_jwt_secret.to_string());
             // 发送并确认交易
             match send_and_confirm_transaction(&tick_client, &rpc_client, &transaction, test_hex_jwt_secret) {
                 Ok(signature) => {

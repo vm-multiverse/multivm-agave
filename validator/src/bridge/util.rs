@@ -112,7 +112,18 @@ pub fn send_and_confirm_transaction_with_config(
     jwt_secret: &str,
 ) -> Result<Signature, Box<dyn std::error::Error + Send + Sync>> {
     // Step 1: Send transaction to get signature
-    let jwt_token = create_jwt_token(jwt_secret)?;
+    let jwt_secret = rpc_client.get_auth_token_secret();
+    let jwt_secret = jwt_secret.ok_or_else(|| {
+        // 记录错误日志
+        error!("Failed to send transaction: JWT token not set");
+        // 创建并返回自定义错误
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,  
+            "JWT token not set"
+        )
+    })?;  
+
+    let jwt_token = create_jwt_token(jwt_secret.as_str())?;
     let signature = rpc_client.send_transaction_with_auto_token(transaction, jwt_token).map_err(|e| {
         error!("Failed to send transaction: {}", e);
         Box::new(std::io::Error::new(
@@ -316,9 +327,19 @@ fn create_jwt_token(secret: &str) -> Result<String, Box<dyn std::error::Error + 
     let token = encode(&JwtHeader::new(Algorithm::HS256), &claims, &key)?;
     Ok(token)
 }
-pub fn distribute_reward_to_account(rpc_client: &RpcClient, ipc_client: &IpcClient, recipient: &Pubkey, amount: u64, jwt_secret: &str) -> Result<Option<AccountSharedData>, Box<dyn std::error::Error + Send + Sync>> {
+pub fn distribute_reward_to_account(rpc_client: &RpcClient, ipc_client: &IpcClient, recipient: &Pubkey, amount: u64) -> Result<Option<AccountSharedData>, Box<dyn std::error::Error + Send + Sync>> {
     // 发送RPC请求
-    let jwt_token = create_jwt_token(jwt_secret)?;
+    let jwt_secret = rpc_client.get_auth_token_secret();
+    let jwt_secret = jwt_secret.ok_or_else(|| {
+        // 记录错误日志
+        error!("Failed to send transaction: JWT token not set");
+        // 创建并返回自定义错误
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "JWT token not set"
+        )
+    })?;
+    let jwt_token = create_jwt_token(jwt_secret.as_str())?;
     ipc_client.tick()?;
     ipc_client.tick()?;
     let response = rpc_client.distribute_reward_to_account(recipient, amount, jwt_token)
@@ -614,7 +635,7 @@ mod tests {
     /// 本地需要手动运行Solana验证器 之前忘记push了这个
     #[test]fn test_slot_hash_consistency() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let rpc_url = "http://127.0.0.1:8899";
-        let rpc_client = RpcClient::new(rpc_url.to_string());
+        let mut rpc_client = RpcClient::new(rpc_url.to_string());
         let faucet_keypair = genesis::faucet_keypair();
         let ipc_client = IpcClient::new("/tmp/solana-private-validator".to_string());
         // TODO
@@ -649,6 +670,7 @@ mod tests {
             transaction.sign(&[&faucet_keypair], recent_blockhash);
             transaction
         }).collect::<Vec<_>>();
+        rpc_client.set_auth_token_secret("bd1fa71e224227a12439367e525610e7c0d242ecfa595ec471299b535e5d179d".to_string());
         for tx in transactions.iter() {
             let send_result = send_and_confirm_transaction(&ipc_client, &rpc_client, tx,"bd1fa71e224227a12439367e525610e7c0d242ecfa595ec471299b535e5d179d");
             match send_result {
@@ -690,12 +712,13 @@ mod tests {
     #[test]
     fn test_distribute_reward() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let rpc_url = "http://127.0.0.1:8899";
-        let rpc_client =RpcClient::new_with_commitment(rpc_url.to_string(), CommitmentConfig::processed());
+        let mut rpc_client =RpcClient::new_with_commitment(rpc_url.to_string(), CommitmentConfig::processed());
         let client = IpcClient::new("/tmp/solana-private-validator".to_string());
         let recipient = Keypair::new().pubkey();
         let amount = 1000;
         let test_hex_jwt_secret = "bd1fa71e224227a12439367e525610e7c0d242ecfa595ec471299b535e5d179d";
-        let account_data = distribute_reward_to_account(&rpc_client, &client, &recipient, amount, test_hex_jwt_secret)?;
+        rpc_client.set_auth_token_secret(test_hex_jwt_secret.to_string());
+        let account_data = distribute_reward_to_account(&rpc_client, &client, &recipient, amount)?;
         if let Some(account_in_response) = account_data {
             println!("{:#?}", account_in_response);
         } else {
