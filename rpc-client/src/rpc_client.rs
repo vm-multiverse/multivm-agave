@@ -191,6 +191,7 @@ pub struct GetConfirmedSignaturesForAddress2Config {
 pub struct RpcClient {
     rpc_client: Arc<nonblocking::rpc_client::RpcClient>,
     runtime: Option<tokio::runtime::Runtime>,
+    auth_token_secret: Option<String>,
 }
 
 impl Drop for RpcClient {
@@ -222,9 +223,15 @@ impl RpcClient {
                     .build()
                     .unwrap(),
             ),
+            auth_token_secret: None,
         }
     }
-
+    pub fn set_auth_token_secret(&mut self, auth_token_secret: String) {
+        self.auth_token_secret = Some(auth_token_secret);
+    }
+    pub fn get_auth_token_secret(&self) -> Option<String> {
+        self.auth_token_secret.clone()
+    }
     /// Create an HTTP `RpcClient`.
     ///
     /// The URL is an HTTP URL, usually for port 8899, as in
