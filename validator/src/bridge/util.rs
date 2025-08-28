@@ -55,6 +55,7 @@ pub fn send_and_confirm_transaction(
     tick_client: &IpcClient,
     rpc_client: &RpcClient,
     transaction: &Transaction,
+    jwt_secret: &str, 
 ) -> Result<Signature, Box<dyn std::error::Error + Send + Sync>> {
     send_and_confirm_transaction_with_config(
         tick_client,
@@ -62,6 +63,7 @@ pub fn send_and_confirm_transaction(
         transaction,
         60,                         // 默认最大重试次数
         Duration::from_millis(100), // 默认轮询间隔 100ms
+        jwt_secret
     )
 }
 
@@ -107,6 +109,7 @@ pub fn send_and_confirm_transaction_with_config(
     transaction: &Transaction,
     max_retries: u32,
     poll_interval: Duration,
+    jwt_secret: &str,
 ) -> Result<Signature, Box<dyn std::error::Error + Send + Sync>> {
     // Step 1: Send transaction to get signature
     let jwt_secret = rpc_client.get_auth_token_secret();
@@ -669,7 +672,7 @@ mod tests {
         }).collect::<Vec<_>>();
         rpc_client.set_auth_token_secret("bd1fa71e224227a12439367e525610e7c0d242ecfa595ec471299b535e5d179d".to_string());
         for tx in transactions.iter() {
-            let send_result = send_and_confirm_transaction(&ipc_client, &rpc_client, tx);
+            let send_result = send_and_confirm_transaction(&ipc_client, &rpc_client, tx,"bd1fa71e224227a12439367e525610e7c0d242ecfa595ec471299b535e5d179d");
             match send_result {
                 Ok(signature) => {
                     match rpc_client.get_signature_status_with_commitment(

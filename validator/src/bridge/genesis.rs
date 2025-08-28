@@ -101,7 +101,7 @@ mod tests {
             let test_hex_jwt_secret = "bd1fa71e224227a12439367e525610e7c0d242ecfa595ec471299b535e5d179d";
             rpc_client.set_auth_token_secret(test_hex_jwt_secret.to_string());
             // 发送并确认交易
-            match send_and_confirm_transaction(&tick_client, &rpc_client, &transaction) {
+            match send_and_confirm_transaction(&tick_client, &rpc_client, &transaction, test_hex_jwt_secret) {
                 Ok(signature) => {
                     successful_transactions += 1;
                     if i % 100 == 0 || i <= 10 {
