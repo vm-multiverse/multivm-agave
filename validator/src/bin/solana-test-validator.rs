@@ -407,6 +407,7 @@ fn main() {
             post_init: admin_service_post_init,
             tower_storage: tower_storage.clone(),
             rpc_to_plugin_manager_sender,
+            manual_tick_channels: std::sync::Arc::new(std::sync::RwLock::new(None)),
         },
     );
     let dashboard = if output == Output::Dashboard {

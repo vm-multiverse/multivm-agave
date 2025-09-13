@@ -54,7 +54,7 @@ impl IpcServer {
 
         // Create Unix domain socket listener
         let listener = UnixListener::bind(&self.socket_path)?;
-        // info!("IPC server started, listening on socket: {}", self.socket_path);
+        info!("IPC server started, listening on socket: {}", self.socket_path);
 
         self.listener = Some(listener);
 

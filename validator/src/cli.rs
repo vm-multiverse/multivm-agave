@@ -2680,14 +2680,7 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> App<
                    This ensures the same genesis hash across multiple validator startups.",
               ),
       )
-      .arg(
-          Arg::with_name("tick_ipc_path")
-              .long("tick-ipc-path")
-              .value_name("PATH")
-              .takes_value(true)
-              .required(true)
-              .help("Path to the IPC socket for multivm communication"),
-      )
+      // multivm-validator always auto-ticks now; manual/IPC ticks removed
 }
 
 pub struct DefaultTestArgs {
