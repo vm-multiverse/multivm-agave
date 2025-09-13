@@ -1,12 +1,7 @@
 use {
     crate::{
         admin_rpc_service,
-        bridge::{
-            self,
-            genesis,
-            ipc::{self, IpcServer},
-            util,
-        },
+        bridge::{self, genesis, util},
         cli,
         dashboard::Dashboard,
         ledger_lockfile, lock_ledger, println_name_value, redirect_stderr_to_file,
@@ -75,7 +70,8 @@ pub fn run_multivm_validator() {
     };
 
     let ledger_path = value_t_or_exit!(matches, "ledger_path", PathBuf);
-    let tick_ipc_path = value_t_or_exit!(matches, "tick_ipc_path", String);
+    let _tick_ipc_path_unused = value_t!(matches, "tick_ipc_path", String).ok();
+    let engine_control_port = value_t!(matches, "engine_control_port", u16).unwrap_or(8989);
     let reset_ledger = matches.is_present("reset");
     let deterministic = matches.is_present("deterministic");
 
@@ -607,15 +603,20 @@ pub fn run_multivm_validator() {
         genesis.set_deterministic_mode(true);
     }
 
-    // IPC server for tick
+    // Manual tick channels for deterministic control
     let (tick_sender, tick_receiver) = unbounded();
     let (tick_done_sender, tick_done_receiver) = unbounded();
-    let mut tick_ipc_server = IpcServer::new(tick_ipc_path, tick_sender, tick_done_receiver);
-    thread::spawn(move || {
-        if let Err(e) = tick_ipc_server.start() {
-            eprintln!("Server error: {}", e);
-        }
-    });
+
+    // Start validator-side engine control RPC (no IPC)
+    let ticks_per_slot_val = ticks_per_slot.unwrap_or(2);
+    let bind_addr = std::net::SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), engine_control_port);
+    crate::engine_control::start_control_server(
+        bind_addr,
+        tick_sender.clone(),
+        tick_done_receiver.clone(),
+        rpc_port,
+        ticks_per_slot_val,
+    );
 
     match genesis.start_with_mint_address_and_geyser_plugin_rpc_and_manual_tick(
         mint_address,

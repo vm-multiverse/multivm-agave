@@ -374,6 +374,7 @@ version = "2.2.15"
 dependencies = [
  "agave-geyser-plugin-interface",
  "assert_cmd",
+ "base64 0.22.1",
  "bincode",
  "chrono",
  "clap 2.34.0",
@@ -382,6 +383,7 @@ dependencies = [
  "crossbeam-channel",
  "fd-lock",
  "hex",
+ "hyper 0.14.32",
  "indicatif",
  "itertools 0.12.1",
  "jsonrpc-core",

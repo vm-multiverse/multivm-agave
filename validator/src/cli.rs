@@ -2685,9 +2685,16 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> App<
               .long("tick-ipc-path")
               .value_name("PATH")
               .takes_value(true)
-              .required(true)
-              .help("Path to the IPC socket for multivm communication"),
+              .help("Path to the IPC socket for multivm communication (deprecated; use engine-control-port)"),
       )
+      .arg(
+          Arg::with_name("engine_control_port")
+              .long("engine-control-port")
+              .takes_value(true)
+              .value_name("PORT")
+              .help("Port for internal engine control RPC (manual tick mode) [default: 8989]"),
+      )
+      
 }
 
 pub struct DefaultTestArgs {
