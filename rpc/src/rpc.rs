@@ -332,8 +332,8 @@ impl JsonRpcRequestProcessor {
     }
 
     #[allow(deprecated)]
-    fn bank(&self, commitment: Option<CommitmentConfig>) -> Arc<Bank> {
-        debug!("RPC commitment_config: {:?}", commitment);
+    fn bank(&self, _commitment: Option<CommitmentConfig>) -> Arc<Bank> {
+        let commitment = Some(CommitmentConfig::processed());
 
         let commitment = commitment.unwrap_or_default();
         if commitment.is_confirmed() {
@@ -2553,12 +2553,8 @@ fn verify_and_parse_signatures_for_address_params(
     Ok((address, before, until, limit))
 }
 
-pub(crate) fn check_is_at_least_confirmed(commitment: CommitmentConfig) -> Result<()> {
-    if !commitment.is_at_least_confirmed() {
-        return Err(Error::invalid_params(
-            "Method does not support commitment below `confirmed`",
-        ));
-    }
+pub(crate) fn check_is_at_least_confirmed(_commitment: CommitmentConfig) -> Result<()> {
+    // Return immediately to allow `processed` commitment for all methods.
     Ok(())
 }
 
