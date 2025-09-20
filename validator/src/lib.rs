@@ -23,6 +23,7 @@ pub mod commands;
 pub mod dashboard;
 pub mod bridge;
 pub mod multivm_validator;
+pub mod engine_control;
 
 #[cfg(unix)]
 fn redirect_stderr(filename: &str) {

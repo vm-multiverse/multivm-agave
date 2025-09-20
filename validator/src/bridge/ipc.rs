@@ -52,6 +52,13 @@ impl IpcServer {
             std::fs::remove_file(&self.socket_path)?;
         }
 
+        // Ensure the parent directory exists if the socket path includes directories
+        if let Some(parent) = Path::new(&self.socket_path).parent() {
+            if !parent.as_os_str().is_empty() && !parent.exists() {
+                std::fs::create_dir_all(parent)?;
+            }
+        }
+
         // Create Unix domain socket listener
         let listener = UnixListener::bind(&self.socket_path)?;
         // info!("IPC server started, listening on socket: {}", self.socket_path);
@@ -262,13 +269,19 @@ impl IpcClient {
 
     /// Send tick message, sends "private_therainisme_tick" message to server
     pub fn tick(&self) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+
+
+        info!("Connecting to IPC server at: {}", self.socket_path);
+        info!("Sending tick message");
         let mut stream = UnixStream::connect(&self.socket_path)?;
 
+        info!("Serializing message 271");
         let message = IpcMessage::Tick {
             message: PRIVATE_TICK_MESSAGE.to_string(),
         };
 
         // Serialize message
+        info!("Serializing message 277" );
         let msg_bytes = bincode::serialize(&message)?;
 
         // Send message length
