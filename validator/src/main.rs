@@ -1225,6 +1225,9 @@ pub fn main() {
 
     let start_progress = Arc::new(RwLock::new(ValidatorStartProgress::default()));
     let admin_service_post_init = Arc::new(RwLock::new(None));
+    // Manual tick channels default to None for standard validator; used by multivm variant
+    let manual_tick_channels: Arc<RwLock<Option<admin_rpc_service::ManualTickChannels>>> =
+        Arc::new(RwLock::new(None));
     let (rpc_to_plugin_manager_sender, rpc_to_plugin_manager_receiver) =
         if starting_with_geyser_plugins {
             let (sender, receiver) = unbounded();
@@ -1244,6 +1247,7 @@ pub fn main() {
             tower_storage: validator_config.tower_storage.clone(),
             staked_nodes_overrides,
             rpc_to_plugin_manager_sender,
+            manual_tick_channels: manual_tick_channels.clone(),
         },
     );
 

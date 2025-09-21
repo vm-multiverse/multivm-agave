@@ -3,3 +3,4 @@ pub mod config;
 pub mod genesis;
 pub mod ipc;
 pub mod util;
+pub mod tick;

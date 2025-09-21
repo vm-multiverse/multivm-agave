@@ -1,12 +1,7 @@
 use {
     crate::{
         admin_rpc_service,
-        bridge::{
-            self,
-            genesis,
-            ipc::{self, IpcServer},
-            util,
-        },
+        bridge::{self, genesis, util},
         cli,
         dashboard::Dashboard,
         ledger_lockfile, lock_ledger, println_name_value, redirect_stderr_to_file,
@@ -49,7 +44,6 @@ use {
         path::{Path, PathBuf},
         process::exit,
         sync::{Arc, RwLock},
-        thread,
         time::{Duration, SystemTime, UNIX_EPOCH},
     },
 };
@@ -75,7 +69,6 @@ pub fn run_multivm_validator() {
     };
 
     let ledger_path = value_t_or_exit!(matches, "ledger_path", PathBuf);
-    let tick_ipc_path = value_t_or_exit!(matches, "tick_ipc_path", String);
     let reset_ledger = matches.is_present("reset");
     let deterministic = matches.is_present("deterministic");
 
@@ -414,6 +407,9 @@ pub fn run_multivm_validator() {
     let tower_storage = Arc::new(FileTowerStorage::new(ledger_path.clone()));
 
     let admin_service_post_init = Arc::new(RwLock::new(None));
+    // Prepare a shared holder for manual tick channels to be exposed via Admin RPC
+    let manual_tick_channels: Arc<RwLock<Option<admin_rpc_service::ManualTickChannels>>> =
+        Arc::new(RwLock::new(None));
     // If geyser_plugin_config value is invalid, the validator will exit when the values are extracted below
     let (rpc_to_plugin_manager_sender, rpc_to_plugin_manager_receiver) =
         if matches.is_present("geyser_plugin_config") {
@@ -434,6 +430,7 @@ pub fn run_multivm_validator() {
             post_init: admin_service_post_init,
             tower_storage: tower_storage.clone(),
             rpc_to_plugin_manager_sender,
+            manual_tick_channels: manual_tick_channels.clone(),
         },
     );
     let dashboard = if output == Output::Dashboard {
@@ -607,22 +604,11 @@ pub fn run_multivm_validator() {
         genesis.set_deterministic_mode(true);
     }
 
-    // IPC server for tick
-    let (tick_sender, tick_receiver) = unbounded();
-    let (tick_done_sender, tick_done_receiver) = unbounded();
-    let mut tick_ipc_server = IpcServer::new(tick_ipc_path, tick_sender, tick_done_receiver);
-    thread::spawn(move || {
-        if let Err(e) = tick_ipc_server.start() {
-            eprintln!("Server error: {}", e);
-        }
-    });
-
-    match genesis.start_with_mint_address_and_geyser_plugin_rpc_and_manual_tick(
+    // Always start with automatic PoH ticking; manual/IPC ticking removed
+    match genesis.start_with_mint_address_and_geyser_plugin_rpc(
         mint_address,
         socket_addr_space,
         rpc_to_plugin_manager_receiver,
-        tick_receiver,
-        tick_done_sender,
     ) {
         Ok(test_validator) => {
             if let Some(dashboard) = dashboard {

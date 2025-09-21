@@ -5,7 +5,10 @@ use solana_sdk::pubkey::Pubkey;
 use jsonwebtoken::{encode, Header as JwtHeader, EncodingKey, Algorithm};
 
 use {
-    crate::bridge::ipc::IpcClient,
+    crate::bridge::{
+        ipc::IpcClient,
+        tick::{LocalTickClient, TickDriver},
+    },
     log::{debug, error, warn},
     solana_client::rpc_client::RpcClient,
     solana_rpc_client_api::config::RpcBlockConfig,
@@ -55,15 +58,32 @@ pub fn send_and_confirm_transaction(
     tick_client: &IpcClient,
     rpc_client: &RpcClient,
     transaction: &Transaction,
-    jwt_secret: &str, 
+    jwt_secret: &str,
 ) -> Result<Signature, Box<dyn std::error::Error + Send + Sync>> {
-    send_and_confirm_transaction_with_config(
+    send_and_confirm_transaction_with_driver(
         tick_client,
         rpc_client,
         transaction,
         60,                         // 默认最大重试次数
         Duration::from_millis(100), // 默认轮询间隔 100ms
-        jwt_secret
+        jwt_secret,
+    )
+}
+
+/// 使用本地 tick（无 IPC/RPC）发送并确认交易
+pub fn send_and_confirm_transaction_local(
+    rpc_client: &RpcClient,
+    transaction: &Transaction,
+    jwt_secret: &str,
+) -> Result<Signature, Box<dyn std::error::Error + Send + Sync>> {
+    let local = LocalTickClient::default();
+    send_and_confirm_transaction_with_driver(
+        &local,
+        rpc_client,
+        transaction,
+        60,
+        Duration::from_millis(100),
+        jwt_secret,
     )
 }
 
@@ -103,8 +123,8 @@ pub fn send_and_confirm_transaction(
 /// - 轮询过程中的临时错误不会立即终止，会继续重试
 /// - 只有交易执行错误才会立即返回失败
 /// - 每次轮询间会等待指定的轮询间隔时间
-pub fn send_and_confirm_transaction_with_config(
-    tick_client: &IpcClient,
+fn send_and_confirm_transaction_with_driver<T: TickDriver>(
+    tick_driver: &T,
     rpc_client: &RpcClient,
     transaction: &Transaction,
     max_retries: u32,
@@ -139,14 +159,8 @@ pub fn send_and_confirm_transaction_with_config(
             attempt, max_retries
         );
 
-        // // Step 3: Poll until commitment level is processed
-        // tick_client.tick().map_err(|e| {
-        //     error!("Failed to tick during polling: {}", e);
-        //     Box::new(std::io::Error::new(
-        //         std::io::ErrorKind::Other,
-        //         format!("Tick failed: {}", e),
-        //     )) as Box<dyn std::error::Error + Send + Sync>
-        // })?;
+        // Optional: tick before status check to drive PoH
+        // (kept minimal; callers can add more ticks as needed)
 
         match rpc_client.get_signature_status_with_commitment(
             &signature,
@@ -178,8 +192,8 @@ pub fn send_and_confirm_transaction_with_config(
                 warn!("Error checking transaction status: {}, retrying...", e);
             }
         }
-        // retry结束
-        tick_client.tick().map_err(|e| {
+        // Drive another tick at the end of the attempt before sleeping
+        tick_driver.trigger_tick().map_err(|e| {
             error!("Failed to tick during polling: {}", e);
             Box::new(std::io::Error::new(
                 std::io::ErrorKind::Other,
@@ -354,6 +368,42 @@ pub fn distribute_reward_to_account(rpc_client: &RpcClient, ipc_client: &IpcClie
     ipc_client.tick()?;
     ipc_client.tick()?;
     Ok(response) // todo 这里现在是返回AccountShareData
+}
+
+/// 使用本地 tick（无 IPC/RPC）分发奖励到账户
+pub fn distribute_reward_to_account_local(
+    rpc_client: &RpcClient,
+    recipient: &Pubkey,
+    amount: u64,
+) -> Result<Option<AccountSharedData>, Box<dyn std::error::Error + Send + Sync>> {
+    let jwt_secret = rpc_client.get_auth_token_secret();
+    let jwt_secret = jwt_secret.ok_or_else(|| {
+        error!("Failed to send transaction: JWT token not set");
+        std::io::Error::new(std::io::ErrorKind::InvalidData, "JWT token not set")
+    })?;
+
+    let jwt_token = create_jwt_token(jwt_secret.as_str())?;
+    let driver = LocalTickClient::default();
+    driver.trigger_tick()?;
+    driver.trigger_tick()?;
+    let response = rpc_client
+        .distribute_reward_to_account(recipient, amount, jwt_token)
+        .map_err(|e| {
+            error!("Failed to send distribute reward RPC: {}", e);
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("RPC call failed: {}", e),
+            )) as Box<dyn std::error::Error + Send + Sync>
+        })?;
+    info!("Successfully distributed reward to {}", recipient);
+    driver.trigger_tick()?;
+    driver.trigger_tick()?;
+    Ok(response)
+}
+
+/// 触发一次本地 tick（如果已初始化）
+pub fn tick_local() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    LocalTickClient::default().trigger_tick()
 }
 
 /// 解析转账交易信息（支持 EVM 地址 memo）
@@ -1112,4 +1162,3 @@ mod tests {
         println!("✓ 正确拒绝无效的EVM地址格式");
     }
 }
-

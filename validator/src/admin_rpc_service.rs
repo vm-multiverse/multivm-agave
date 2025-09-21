@@ -1,5 +1,5 @@
 use {
-    crossbeam_channel::Sender,
+    crossbeam_channel::{Receiver, Sender},
     jsonrpc_core::{BoxFuture, ErrorCode, MetaIoHandler, Metadata, Result},
     jsonrpc_core_client::{transports::ipc, RpcError},
     jsonrpc_derive::rpc,
@@ -48,6 +48,8 @@ pub struct AdminRpcRequestMetadata {
     pub staked_nodes_overrides: Arc<RwLock<HashMap<Pubkey, u64>>>,
     pub post_init: Arc<RwLock<Option<AdminRpcRequestMetadataPostInit>>>,
     pub rpc_to_plugin_manager_sender: Option<Sender<GeyserPluginManagerRequest>>,
+    /// Optional manual tick channels. When set, RPC can trigger a tick and wait for completion.
+    pub manual_tick_channels: Arc<RwLock<Option<ManualTickChannels>>>,
 }
 
 impl Metadata for AdminRpcRequestMetadata {}
@@ -65,6 +67,12 @@ impl AdminRpcRequestMetadata {
             ))
         }
     }
+}
+
+#[derive(Clone)]
+pub struct ManualTickChannels {
+    pub tick_sender: Sender<()>,
+    pub tick_done_receiver: Receiver<()>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -243,6 +251,10 @@ pub trait AdminRpc {
         meta: Self::Metadata,
         public_tpu_forwards_addr: SocketAddr,
     ) -> Result<()>;
+
+    /// Trigger one manual PoH tick in multivm mode and wait for completion
+    #[rpc(meta, name = "manualTick")]
+    fn manual_tick(&self, meta: Self::Metadata) -> Result<()>;
 }
 
 pub struct AdminRpcImpl;
@@ -679,6 +691,36 @@ impl AdminRpc for AdminRpcImpl {
             Ok(())
         })
     }
+
+    fn manual_tick(&self, meta: Self::Metadata) -> Result<()> {
+        debug!("manual_tick rpc request received");
+
+        let maybe = meta.manual_tick_channels.read().unwrap().clone();
+        let Some(channels) = maybe else {
+            return Err(jsonrpc_core::error::Error::invalid_params(
+                "Manual tick not available yet",
+            ));
+        };
+
+        channels
+            .tick_sender
+            .send(())
+            .map_err(|err| jsonrpc_core::error::Error::invalid_params(format!(
+                "Failed to trigger tick: {}",
+                err
+            )))?;
+
+        channels
+            .tick_done_receiver
+            .recv()
+            .map_err(|err| jsonrpc_core::Error {
+                code: ErrorCode::InternalError,
+                message: format!("Failed waiting for tick completion: {}", err),
+                data: None,
+            })?;
+
+        Ok(())
+    }
 }
 
 impl AdminRpcImpl {
@@ -962,6 +1004,7 @@ mod tests {
                 }))),
                 staked_nodes_overrides: Arc::new(RwLock::new(HashMap::new())),
                 rpc_to_plugin_manager_sender: None,
+                manual_tick_channels: Arc::new(RwLock::new(None)),
             };
             let mut io = MetaIoHandler::default();
             io.extend_with(AdminRpcImpl.to_delegate());
@@ -1381,6 +1424,7 @@ mod tests {
                 post_init: post_init.clone(),
                 staked_nodes_overrides: Arc::new(RwLock::new(HashMap::new())),
                 rpc_to_plugin_manager_sender: None,
+                manual_tick_channels: Arc::new(RwLock::new(None)),
             };
 
             let _validator = Validator::new(
@@ -1468,5 +1512,78 @@ mod tests {
             serde_json::from_str(&exit_response.expect("actual response"))
                 .expect("actual response deserialization");
         assert_eq!(actual_parsed_response, expected_parsed_response);
+    }
+
+    #[test]
+    fn test_manual_tick_success() {
+        use std::sync::atomic::AtomicBool;
+
+        // Build minimal metadata with manual tick channels set
+        let start_progress = Arc::new(RwLock::new(ValidatorStartProgress::default()));
+        let validator_exit = solana_rpc::rpc::create_validator_exit(Arc::new(AtomicBool::new(false)));
+        let authorized_voter_keypairs = Arc::new(RwLock::new(vec![Arc::new(Keypair::new())]));
+
+        let (tick_sender, tick_receiver) = crossbeam_channel::unbounded::<()>();
+        let (tick_done_sender, tick_done_receiver) = crossbeam_channel::unbounded::<()>();
+
+        // When the RPC triggers a tick, simulate completion by sending on tick_done_sender
+        std::thread::spawn(move || {
+            let _ = tick_receiver.recv();
+            let _ = tick_done_sender.send(());
+        });
+
+        let meta = AdminRpcRequestMetadata {
+            rpc_addr: None,
+            start_time: SystemTime::now(),
+            start_progress,
+            validator_exit,
+            authorized_voter_keypairs,
+            tower_storage: Arc::new(NullTowerStorage {}),
+            post_init: Arc::new(RwLock::new(None)),
+            staked_nodes_overrides: Arc::new(RwLock::new(HashMap::new())),
+            rpc_to_plugin_manager_sender: None,
+            manual_tick_channels: Arc::new(RwLock::new(Some(ManualTickChannels {
+                tick_sender,
+                tick_done_receiver,
+            }))),
+        };
+
+        let mut io = MetaIoHandler::default();
+        io.extend_with(AdminRpcImpl.to_delegate());
+
+        let req = r#"{"jsonrpc":"2.0","id":1,"method":"manualTick","params":[]}"#;
+        let res = io.handle_request_sync(req, meta);
+        let parsed: Value = serde_json::from_str(&res.expect("actual response")).unwrap();
+        assert_eq!(parsed["result"], Value::Null);
+    }
+
+    #[test]
+    fn test_manual_tick_unavailable() {
+        use std::sync::atomic::AtomicBool;
+
+        let start_progress = Arc::new(RwLock::new(ValidatorStartProgress::default()));
+        let validator_exit = solana_rpc::rpc::create_validator_exit(Arc::new(AtomicBool::new(false)));
+        let authorized_voter_keypairs = Arc::new(RwLock::new(vec![Arc::new(Keypair::new())]));
+
+        let meta = AdminRpcRequestMetadata {
+            rpc_addr: None,
+            start_time: SystemTime::now(),
+            start_progress,
+            validator_exit,
+            authorized_voter_keypairs,
+            tower_storage: Arc::new(NullTowerStorage {}),
+            post_init: Arc::new(RwLock::new(None)),
+            staked_nodes_overrides: Arc::new(RwLock::new(HashMap::new())),
+            rpc_to_plugin_manager_sender: None,
+            manual_tick_channels: Arc::new(RwLock::new(None)),
+        };
+
+        let mut io = MetaIoHandler::default();
+        io.extend_with(AdminRpcImpl.to_delegate());
+
+        let req = r#"{"jsonrpc":"2.0","id":1,"method":"manualTick","params":[]}"#;
+        let res = io.handle_request_sync(req, meta);
+        let parsed: Value = serde_json::from_str(&res.expect("actual response")).unwrap();
+        assert_eq!(parsed["error"]["code"], Value::from(-32602)); // Invalid params
     }
 }
