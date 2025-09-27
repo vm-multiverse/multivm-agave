@@ -1779,13 +1779,7 @@ impl JsonRpcRequestProcessor {
             status,
             confirmations,
             err,
-            confirmation_status: if confirmations.is_none() {
-                Some(TransactionConfirmationStatus::Finalized)
-            } else if optimistically_confirmed.is_some() {
-                Some(TransactionConfirmationStatus::Confirmed)
-            } else {
-                Some(TransactionConfirmationStatus::Processed)
-            },
+            confirmation_status: Some(TransactionConfirmationStatus::Finalized),
         })
     }
 
@@ -1916,16 +1910,13 @@ impl JsonRpcRequestProcessor {
                 .into_iter()
                 .map(|x| {
                     let mut item: RpcConfirmedTransactionStatusWithSignature = x.into();
-                    if item.slot <= highest_super_majority_root {
-                        item.confirmation_status = Some(TransactionConfirmationStatus::Finalized);
-                    } else {
-                        item.confirmation_status = Some(TransactionConfirmationStatus::Confirmed);
-                        if item.block_time.is_none() {
-                            let r_bank_forks = self.bank_forks.read().unwrap();
-                            item.block_time = r_bank_forks
-                                .get(item.slot)
-                                .map(|bank| bank.clock().unix_timestamp);
-                        }
+                    // Force all transaction statuses to return Finalized
+                    item.confirmation_status = Some(TransactionConfirmationStatus::Finalized);
+                    if item.block_time.is_none() {
+                        let r_bank_forks = self.bank_forks.read().unwrap();
+                        item.block_time = r_bank_forks
+                            .get(item.slot)
+                            .map(|bank| bank.clock().unix_timestamp);
                     }
                     item
                 })
